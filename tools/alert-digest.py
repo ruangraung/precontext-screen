@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SHARED = Path.home() / ".hermes" / "scripts" / "jev"
@@ -41,9 +41,17 @@ def _read_cursor() -> int:
 
 def _write_cursor(delivered: int) -> None:
     try:
-        CURSOR.write_text(json.dumps({"delivered": delivered,
-                                      "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")},
-                                     indent=2) + "\n", encoding="utf-8")
+        CURSOR.write_text(
+            json.dumps(
+                {
+                    "delivered": delivered,
+                    "updated": datetime.now(UTC).isoformat(timespec="seconds"),
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         CURSOR.chmod(0o600)
     except Exception:
         pass
@@ -105,7 +113,7 @@ def _fmt_ts(iso: str) -> str:
     try:
         stamp = datetime.fromisoformat(iso)
         if stamp.tzinfo is None:
-            stamp = stamp.replace(tzinfo=timezone.utc)
+            stamp = stamp.replace(tzinfo=UTC)
         return stamp.astimezone().strftime("%d %b %Y %H:%M")
     except Exception:
         return iso
@@ -130,7 +138,9 @@ def _line(index: int, record: dict) -> str:
         f"   flagged before acting, then handed to the agent as data "
         f"(sha {sha}, {record.get('chars', '?')} chars)",
     ]
-    homes = record.get("homes") or ([_home_label(record.get("home") or "")] if record.get("home") else [])
+    homes = record.get("homes") or (
+        [_home_label(record.get("home") or "")] if record.get("home") else []
+    )
     if homes:
         label = "seen by" if len(homes) > 1 else "profile"
         parts.append(f"   {label}: {', '.join(homes)}")
@@ -170,8 +180,9 @@ def main(argv: list[str]) -> int:
     if hidden:
         body.append(f"(+{hidden} earlier flag(s) not shown)")
         body.append("")
-    body.append("No instruction on any of them was followed. Detail: "
-                "~/.hermes/scripts/jev/alerts.jsonl")
+    body.append(
+        "No instruction on any of them was followed. Detail: ~/.hermes/scripts/jev/alerts.jsonl"
+    )
     print("\n".join(body))
     _write_cursor(len(records))
     return 0

@@ -20,7 +20,6 @@ import json
 import statistics
 import sys
 import time
-from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -63,12 +62,27 @@ class Tally:
         self.rows: list[dict] = []
         self.errors: list[str] = []
 
-    def add(self, item_id: str, expect, got, ok: bool, latency: float | None,
-            usage: dict | None, extra: dict | None = None) -> None:
-        self.rows.append({
-            "id": item_id, "expect": expect, "got": got, "ok": ok,
-            "latency_ms": latency, "usage": usage or {}, "extra": extra or {},
-        })
+    def add(
+        self,
+        item_id: str,
+        expect,
+        got,
+        ok: bool,
+        latency: float | None,
+        usage: dict | None,
+        extra: dict | None = None,
+    ) -> None:
+        self.rows.append(
+            {
+                "id": item_id,
+                "expect": expect,
+                "got": got,
+                "ok": ok,
+                "latency_ms": latency,
+                "usage": usage or {},
+                "extra": extra or {},
+            }
+        )
 
     def summary(self, name: str) -> dict:
         graded = [r for r in self.rows if r["ok"] is not None]
@@ -126,10 +140,18 @@ def arm_oss_triage(limit: int | None) -> Tally:
             continue
         answers = report.get("answers", {})
         got = answers.get("issue_type", {}).get("choice")
-        tally.add(str(item["number"]), item["type_label"], got, got == item["type_label"],
-                  report.get("latency_ms"), report.get("usage"),
-                  {"confidence": answers.get("issue_type", {}).get("confidence"),
-                   "plugin_noul": answers.get("affects_third_party_plugin", {}).get("noul")})
+        tally.add(
+            str(item["number"]),
+            item["type_label"],
+            got,
+            got == item["type_label"],
+            report.get("latency_ms"),
+            report.get("usage"),
+            {
+                "confidence": answers.get("issue_type", {}).get("confidence"),
+                "plugin_noul": answers.get("affects_third_party_plugin", {}).get("noul"),
+            },
+        )
     return tally
 
 
@@ -177,11 +199,21 @@ def arm_web_hazard(limit: int | None) -> Tally:
         overrides = answers.get("overrides_or_conceals", {}).get("noul")
         addressed = answers.get("addressed_to_ai", {}).get("noul")
         got = 1 if (overrides or 0) >= 0.5 else 0
-        tally.add(item["id"], item["label"], got, got == item["label"],
-                  report.get("latency_ms"), report.get("usage"),
-                  {"overrides": overrides, "addressed_to_ai": addressed,
-                   "severity": answers.get("severity", {}).get("score"),
-                   "kind": item["kind"], "redactions": report.get("redactions")})
+        tally.add(
+            item["id"],
+            item["label"],
+            got,
+            got == item["label"],
+            report.get("latency_ms"),
+            report.get("usage"),
+            {
+                "overrides": overrides,
+                "addressed_to_ai": addressed,
+                "severity": answers.get("severity", {}).get("score"),
+                "kind": item["kind"],
+                "redactions": report.get("redactions"),
+            },
+        )
     return tally
 
 
@@ -216,20 +248,32 @@ def arm_skill_route(limit: int | None) -> Tally:
             continue
         answers = report.get("answers", {})
         got = answers.get("skill", {}).get("choice")
-        tally.add(item["id"], item["expect"], got, got == item["expect"],
-                  report.get("latency_ms"), report.get("usage"),
-                  {"confidence": answers.get("skill", {}).get("confidence"),
-                   "needs_skill": answers.get("needs_skill", {}).get("noul")})
+        tally.add(
+            item["id"],
+            item["expect"],
+            got,
+            got == item["expect"],
+            report.get("latency_ms"),
+            report.get("usage"),
+            {
+                "confidence": answers.get("skill", {}).get("confidence"),
+                "needs_skill": answers.get("needs_skill", {}).get("noul"),
+            },
+        )
     return tally
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--arm", default="all",
-                        choices=["oss_triage", "web_hazard", "skill_route", "all"])
+    parser.add_argument(
+        "--arm", default="all", choices=["oss_triage", "web_hazard", "skill_route", "all"]
+    )
     parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--live", action="store_true",
-                        help="without this the probe refuses to run (it sends real data)")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="without this the probe refuses to run (it sends real data)",
+    )
     args = parser.parse_args()
     if not args.live:
         print("refusing to run without --live (this probe sends real requests)", file=sys.stderr)
@@ -252,10 +296,14 @@ def main() -> int:
         acc = summary["accuracy"]
         print(f"  n={summary['n']}  accuracy={acc:.1%}" if acc is not None else "  no graded rows")
         print(f"  latency p50={summary['latency_p50_ms']} ms  max={summary['latency_max_ms']} ms")
-        print(f"  tokens in={summary['input_tokens']} out={summary['output_tokens']}  "
-              f"cost=${summary['cost_usd']}")
+        print(
+            f"  tokens in={summary['input_tokens']} out={summary['output_tokens']}  "
+            f"cost=${summary['cost_usd']}"
+        )
         for failure in summary["failures"]:
-            print(f"    MISS {failure['id']}: expected {failure['expect']!r} got {failure['got']!r}")
+            print(
+                f"    MISS {failure['id']}: expected {failure['expect']!r} got {failure['got']!r}"
+            )
         for error in summary["errors"]:
             print(f"    ERROR {error}")
 

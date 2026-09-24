@@ -44,10 +44,17 @@ def main() -> int:
 
     results: list[tuple[str, bool, str]] = []
 
-    hostile = model_tools.handle_function_call("web_extract", {"urls": [hostile_url]}, task_id="e2e-screen")
+    hostile = model_tools.handle_function_call(
+        "web_extract", {"urls": [hostile_url]}, task_id="e2e-screen"
+    )
     hostile_flagged = "<INJECTION-SCREEN" in hostile
-    results.append(("hostile page: banner appended to the tool result", hostile_flagged,
-                    f"{len(hostile)} chars returned"))
+    results.append(
+        (
+            "hostile page: banner appended to the tool result",
+            hostile_flagged,
+            f"{len(hostile)} chars returned",
+        )
+    )
     if hostile_flagged:
         marker = hostile.find("<INJECTION-SCREEN")
         print("--- what the agent would receive, from the marker on ---")
@@ -55,7 +62,9 @@ def main() -> int:
         print("--- end ---")
         print()
 
-    benign = model_tools.handle_function_call("web_extract", {"urls": [benign_url]}, task_id="e2e-screen")
+    benign = model_tools.handle_function_call(
+        "web_extract", {"urls": [benign_url]}, task_id="e2e-screen"
+    )
     benign_clean = "<INJECTION-SCREEN" not in benign
     results.append(("benign page: result untouched", benign_clean, f"{len(benign)} chars returned"))
 

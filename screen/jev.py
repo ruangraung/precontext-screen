@@ -77,13 +77,14 @@ TASKS: dict[str, dict] = {
 # per-class "redaction" field, not here. Your own names go in the config file
 # below, which is merged with these defaults.
 #
-# The key headers are assembled from two pieces on purpose: a source file that
-# argues about credential literals should not itself contain a complete one.
+# A key header is matched by pattern rather than listed as a literal. Two reasons:
+# a source file that argues about credential literals should not itself contain a
+# complete one, and implicit string concatenation does not survive a formatter,
+# which merges the pieces back into the literal. One pattern also covers every key
+# type, including the PGP BLOCK form, rather than only the remembered headers.
+_KEY_HEADER = re.compile(r"-{5}BEGIN(?: [A-Z]{2,10})? PRIVATE KEY(?: BLOCK)?-{5}")
+
 DEFAULT_PRIVATE_MARKERS = (
-    "-----BEGIN " "OPENSSH PRIVATE KEY-----",
-    "-----BEGIN " "RSA PRIVATE KEY-----",
-    "-----BEGIN " "EC PRIVATE KEY-----",
-    "-----BEGIN " "PGP PRIVATE KEY BLOCK-----",
     "BWS_ACCESS_TOKEN",
     "TYPESAFE_API_KEY",
 )
@@ -128,10 +129,21 @@ PRIVATE_MARKERS = DEFAULT_PRIVATE_MARKERS + _CONFIG_REFUSE
 OUR_MARKERS = DEFAULT_INTERNAL_MARKERS + _CONFIG_INTERNAL
 
 _SECRET_PATTERNS = (
-    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S), "<private-key>"),
+    (
+        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
+        "<private-key>",
+    ),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"), "<jwt>"),
-    (re.compile(r"\b(?:sk|pk|ghp|gho|ghs|github_pat|xox[baprs]|bws|AIza)[-_A-Za-z0-9]{16,}\b"), "<token>"),
-    (re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|pwd)\b(\s*[:=]\s*)\S+"), r"\1\2<redacted>"),
+    (
+        re.compile(r"\b(?:sk|pk|ghp|gho|ghs|github_pat|xox[baprs]|bws|AIza)[-_A-Za-z0-9]{16,}\b"),
+        "<token>",
+    ),
+    (
+        re.compile(
+            r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|pwd)\b(\s*[:=]\s*)\S+"
+        ),
+        r"\1\2<redacted>",
+    ),
     (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}"), "Bearer <redacted>"),
     (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "<email>"),
 )
@@ -191,8 +203,9 @@ def key_state() -> dict:
 
 
 # --- gate ---------------------------------------------------------------------
-def redact(text: str, profile: str,
-           our_markers: tuple[str, ...] | None = None) -> tuple[str, dict[str, int]]:
+def redact(
+    text: str, profile: str, our_markers: tuple[str, ...] | None = None
+) -> tuple[str, dict[str, int]]:
     """Redact for one profile. our_markers defaults to the configured set."""
     counts: dict[str, int] = {}
     markers = OUR_MARKERS if our_markers is None else our_markers
@@ -209,8 +222,9 @@ def redact(text: str, profile: str,
     return text, counts
 
 
-def guard(task_class: str, state: str,
-          private_markers: tuple[str, ...] | None = None) -> tuple[str, dict[str, int]]:
+def guard(
+    task_class: str, state: str, private_markers: tuple[str, ...] | None = None
+) -> tuple[str, dict[str, int]]:
     """Redact, then decide whether the result is allowed to leave."""
     refused = PRIVATE_MARKERS if private_markers is None else private_markers
     if task_class not in TASKS:
@@ -223,6 +237,8 @@ def guard(task_class: str, state: str,
             raise PolicyError(
                 f"payload contains private marker {marker!r} — refusing to send under any class"
             )
+    if _KEY_HEADER.search(state):
+        raise PolicyError("payload contains a private key header; refusing to send under any class")
     cleaned, counts = redact(state, spec["redaction"])
     size = len(cleaned.encode())
     if size > spec["max_bytes"]:
@@ -275,8 +291,18 @@ def _post(payload: dict, key: str, timeout: float = 60.0) -> tuple[int, dict, fl
 def log_call(record: dict) -> None:
     """Append one line per call. Payloads are never written, only their digest."""
     allowed = {
-        "ts", "task_class", "model", "payload_sha256", "bytes_sent", "http_status",
-        "latency_ms", "input_tokens", "output_tokens", "answers", "ok", "error",
+        "ts",
+        "task_class",
+        "model",
+        "payload_sha256",
+        "bytes_sent",
+        "http_status",
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+        "answers",
+        "ok",
+        "error",
     }
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with LOG_PATH.open("a") as handle:
@@ -314,21 +340,29 @@ def ask(
     status, body, latency = _post(payload, key, timeout)
     answers = body.get("answers", {})
     usage = body.get("usage", {})
-    log_call({
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "task_class": task_class,
-        "model": body.get("model", model),
-        "payload_sha256": digest,
-        "bytes_sent": report["bytes_sent"],
-        "http_status": status,
-        "latency_ms": round(latency, 1),
-        "input_tokens": usage.get("input_tokens"),
-        "output_tokens": usage.get("output_tokens"),
-        "answers": answers,
-        "ok": True,
-    })
-    report.update({"latency_ms": round(latency, 1), "answers": answers, "usage": usage,
-                   "model": body.get("model", model)})
+    log_call(
+        {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "task_class": task_class,
+            "model": body.get("model", model),
+            "payload_sha256": digest,
+            "bytes_sent": report["bytes_sent"],
+            "http_status": status,
+            "latency_ms": round(latency, 1),
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+            "answers": answers,
+            "ok": True,
+        }
+    )
+    report.update(
+        {
+            "latency_ms": round(latency, 1),
+            "answers": answers,
+            "usage": usage,
+            "model": body.get("model", model),
+        }
+    )
     return report
 
 
@@ -354,8 +388,11 @@ def selftest() -> int:
     clean_i, counts_i = redact(internal, "internal", our_markers=("vault.acme.test",))
     for needle in ("vault.acme.test", "/home/example", "203.0.113.9"):
         check(f"internal redaction kills {needle[:18]}", needle not in clean_i)
-    check("internal flags configured markers",
-          any(k.startswith("ours:") for k in counts_i), str(counts_i))
+    check(
+        "internal flags configured markers",
+        any(k.startswith("ours:") for k in counts_i),
+        str(counts_i),
+    )
 
     # 3. public profile must NOT mangle legitimate public data
     public_text = "github.com/NousResearch/hermes-agent PR #114422 by @ruangraung"
@@ -380,7 +417,8 @@ def selftest() -> int:
 
     # 5b. a private key block is refused, not redacted and sent
     try:
-        guard("web_hazard", "here is the key: " + "-----BEGIN " "OPENSSH PRIVATE KEY-----")
+        header = "-" * 5 + "BEGIN OPENSSH PRIVATE KEY" + "-" * 5
+        guard("web_hazard", f"here is the key: {header}")
         check("refused payload with a private key block", False)
     except PolicyError:
         check("refused payload with a private key block", True)
@@ -390,14 +428,17 @@ def selftest() -> int:
         good = Path(tmp) / "markers.json"
         good.write_text(json.dumps({"refuse": ["my-vault"], "internal": ["acme.test"]}))
         refuse, internal_markers = load_marker_config(good)
-        check("config markers load",
-              refuse == ("my-vault",) and internal_markers == ("acme.test",),
-              f"{refuse} {internal_markers}")
+        check(
+            "config markers load",
+            refuse == ("my-vault",) and internal_markers == ("acme.test",),
+            f"{refuse} {internal_markers}",
+        )
         broken = Path(tmp) / "broken.json"
         broken.write_text("{not json")
         refuse_b, internal_b = load_marker_config(broken)
-        check("malformed config degrades to empty",
-              refuse_b == () and internal_b == (), str(refuse_b))
+        check(
+            "malformed config degrades to empty", refuse_b == () and internal_b == (), str(refuse_b)
+        )
 
     # 6. oversize refused where truncate is off, truncated where it is on
     try:
@@ -410,9 +451,14 @@ def selftest() -> int:
 
     # 7. payload shape matches the published contract
     payload = build_payload("some state", {"q": {"type": "noul", "instructions": "Is it true?"}})
-    check("payload has state/model/questions",
-          set(payload) == {"state", "model", "questions"}, str(sorted(payload)))
-    check("payload model defaults to jev-latest", payload["model"] == "jev-latest", payload["model"])
+    check(
+        "payload has state/model/questions",
+        set(payload) == {"state", "model", "questions"},
+        str(sorted(payload)),
+    )
+    check(
+        "payload model defaults to jev-latest", payload["model"] == "jev-latest", payload["model"]
+    )
 
     # 8. empty question set refused
     try:
@@ -444,7 +490,9 @@ def selftest() -> int:
     real_log = LOG_PATH
     LOG_PATH = probe_log
     try:
-        log_call({"ts": "now", "task_class": "oss_triage", "payload": {"state": "LEAK"}, "ok": True})
+        log_call(
+            {"ts": "now", "task_class": "oss_triage", "payload": {"state": "LEAK"}, "ok": True}
+        )
         written = probe_log.read_text()
         check("log never stores payloads", "LEAK" not in written, written.strip()[:80])
         check("log stores the allow-listed fields", '"task_class"' in written)
@@ -467,7 +515,9 @@ def selftest() -> int:
 
     passed = sum(1 for _, ok, _ in results if ok)
     for name, ok, note in results:
-        print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f"   ({note})" if note and not ok else ""))
+        print(
+            f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f"   ({note})" if note and not ok else "")
+        )
     print(f"\n  {passed}/{len(results)} checks passed")
     return 0 if passed == len(results) else 1
 
@@ -485,7 +535,9 @@ def _load(path_or_inline: str | None, inline_args: list[str]) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Gated client for api.typesafe.ai (dry-run by default)")
+    parser = argparse.ArgumentParser(
+        description="Gated client for api.typesafe.ai (dry-run by default)"
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("selftest", help="offline tests of the gate; sends nothing")
@@ -512,7 +564,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "policy":
         for name, spec in TASKS.items():
             print(f"{name:14} sends: {spec['sends']}")
-            print(f"{'':14} redaction={spec['redaction']} max_bytes={spec['max_bytes']} truncate={spec['truncate']}")
+            print(
+                f"{'':14} redaction={spec['redaction']} max_bytes={spec['max_bytes']} truncate={spec['truncate']}"
+            )
         print("\nRefused outright if the payload contains any of:")
         for marker in PRIVATE_MARKERS:
             print(f"  - {marker}")
@@ -531,8 +585,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"could not read questions: {exc}")
 
     try:
-        report = ask(args.task_class, state, questions, args.model, dry_run=not args.live,
-                     timeout=args.timeout)
+        report = ask(
+            args.task_class,
+            state,
+            questions,
+            args.model,
+            dry_run=not args.live,
+            timeout=args.timeout,
+        )
     except (PolicyError, TransportError) as exc:
         print(f"REFUSED/FAILED: {exc}", file=sys.stderr)
         return 2
