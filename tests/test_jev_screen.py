@@ -2,7 +2,7 @@
 """Exercise the jev-screen hook for real: same code path Hermes calls, real Jev calls.
 
 Alert + screen-log paths are redirected to /tmp so a test can never land in the live
-queue that the digest job delivers to .
+queue that the digest job delivers from.
 """
 
 from __future__ import annotations
