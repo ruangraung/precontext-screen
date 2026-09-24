@@ -1,0 +1,29 @@
+# Local harness notes. This repository is published; these are not.
+.pi/
+_staging/
+
+# Runtime state produced by the screener. Never publish: these carry real verdicts
+# and the URLs they were taken on.
+send-log.jsonl
+screen-log.jsonl
+alerts*.jsonl
+probe-data/
+*.log
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Editors / OS
+.DS_Store
+*.swp

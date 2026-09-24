@@ -1,0 +1,94 @@
+# CI — the gates this repository is required to pass.
+#
+# Five gates protect `main`. Four live here as Actions jobs; the fifth is the
+# CodeScene Code Health Review, which arrives as an App check-run on the pull
+# request rather than an Actions job (it has no job log, and `gh run list` will
+# report CI green while that check is red).
+#
+#   1. Publish hygiene  -> identity/infrastructure leaks in tracked files
+#   2. Gitleaks         -> committed credentials, full history
+#   3. Tests + lint     -> both suites offline, plus ruff
+#   4. CodeQL           -> static analysis (free on public repos, see the guard)
+#   5. CodeScene        -> Code Health gate, App check-run, required on main
+#
+# Deliberately absent: a supply-chain scanner. This repository has no third-party
+# runtime dependencies, so such a job would have nothing to scan while still
+# showing a green check. Revisit the moment a dependency appears.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish-hygiene:
+    name: Publish hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No internal identity or infrastructure in tracked files
+        run: bash scripts/publish-hygiene.sh
+
+  secret-scan:
+    name: Gitleaks secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  tests:
+    name: Tests + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install lint tooling
+        run: pip install ruff
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format check
+        run: ruff format --check .
+      - name: Suites
+        run: bash scripts/run-suites.sh
+
+  codeql:
+    name: CodeQL
+    # Code scanning is free on public repositories; on a private repository it
+    # requires GitHub Advanced Security. This guard keeps the job dormant while the
+    # repository is private and switches it on by itself at the public flip, rather
+    # than leaving a permanently red check that everyone learns to ignore.
+    #
+    # Injection note: this is the only `${{ }}` expression in the file and it is a
+    # boolean evaluated by the workflow engine in a job-level `if:`. No event field is
+    # ever interpolated into a `run:` block, which is the injection shape to avoid.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@v3

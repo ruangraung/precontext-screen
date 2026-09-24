@@ -1,0 +1,41 @@
+#!/bin/bash
+# Pre-commit hook: refuse to commit credentials.
+#
+# gitleaks is resolved via PATH first, then two known install locations, so the
+# hook still works in shells that do not carry Homebrew or ~/.local/bin. If it
+# cannot be found at all, the hook FAILS CLOSED: a missing scanner must not be
+# indistinguishable from a clean scan.
+#
+# Requires gitleaks >= 8.19 for the `git --staged` subcommand (older releases
+# spell it `protect --staged`).
+
+GITLEAKS="$(command -v gitleaks || true)"
+for candidate in /home/linuxbrew/.linuxbrew/bin/gitleaks "$HOME/.local/bin/gitleaks"; do
+    if [ -z "$GITLEAKS" ] && [ -x "$candidate" ]; then
+        GITLEAKS="$candidate"
+    fi
+done
+
+if [ -z "$GITLEAKS" ] || [ ! -x "$GITLEAKS" ]; then
+    echo ""
+    echo "gitleaks not found, refusing to commit."
+    echo "  install: brew install gitleaks"
+    echo ""
+    exit 1
+fi
+
+echo "Running gitleaks scan on staged changes..."
+"$GITLEAKS" git --staged --verbose
+status=$?
+
+if [ $status -ne 0 ]; then
+    echo ""
+    echo "gitleaks found potential secrets in staged files."
+    echo "  Remove the credential, or if it is a false positive add it to .gitleaksignore."
+    echo "  To bypass this once (not recommended): git commit --no-verify"
+    echo ""
+    exit 1
+fi
+
+echo "No secrets detected."
+exit 0

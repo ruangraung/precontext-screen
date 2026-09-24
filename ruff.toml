@@ -1,0 +1,27 @@
+# Ruff configuration.
+#
+# The repo is a set of scripts and a plugin adapter, not an installable package, so
+# this is deliberately a standalone ruff.toml rather than a pyproject.toml with an
+# empty project table.
+
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "SIM", # simplify
+]
+ignore = [
+    "E501", # line length is enforced by the formatter
+]
+
+[lint.per-file-ignores]
+# Suites print progress and assert with raised exceptions rather than fixtures, and
+# the end-to-end proof imports host modules that are not resolvable statically.
+"tests/*" = ["E402"]
