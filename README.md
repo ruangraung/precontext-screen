@@ -326,6 +326,17 @@ screened, a missing client fails open, the queued alert carries a verdict and no
 the offline path answers recorded content and refuses anything else, and the banner names the
 plugin exactly as its manifest does.
 
+### The client's own checks
+
+The client carries an offline selftest of its own, covering the egress gate rather than the hook:
+the declared task classes, redaction, the refusal list, the payload builder, and the rule that a
+log line never stores a payload. It needs no key and no network.
+
+```bash
+python3 screen/jev.py selftest     # 24 checks
+python3 screen/jev.py key-check    # booleans only: whether a key resolves, and from where
+```
+
 The end-to-end proof walks production discovery instead:
 
 ```bash
