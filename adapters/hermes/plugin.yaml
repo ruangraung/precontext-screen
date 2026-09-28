@@ -2,9 +2,10 @@ name: precontext-screen
 version: 1.0.0
 description: >-
   Screens untrusted web/browser tool results for prompt injection with TypeSafe Jev
-  before they enter the agent's context. Hostile results get an in-line warning banner
-  in place of the raw content, and every verdict is logged. Fails open: if screening
-  is unavailable the result passes through untouched.
+  before they enter the agent's context. A hostile result keeps its own text and gains
+  an in-line banner that marks it untrusted and tells the agent to report it, and every
+  verdict is logged without the content. Fails open: if screening is unavailable the
+  result passes through untouched.
 author: ruangraung
 kind: standalone
 provides_hooks:

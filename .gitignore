@@ -31,3 +31,4 @@ venv/
 # Editors / OS
 .DS_Store
 *.swp
+.zed/
