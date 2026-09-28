@@ -1,16 +1,17 @@
-# CI — the gates this repository is required to pass.
+# CI: the gates this repository runs.
 #
-# Four gates run here as Actions jobs, and these four are the ones the `main` ruleset
-# requires. CodeScene's Code Health Review is the intended fifth, and it is the odd one:
-# it arrives as an App check-run rather than an Actions job, so it has no job log and
-# `gh run list` reports CI green while that check is red. It is added to the ruleset once
-# it actually reports on a pull request. Requiring a check that has never posted would
-# deadlock every pull request against a gate that cannot answer.
+# Four gates run here as Actions jobs. The `main` ruleset requires three of them plus
+# CodeScene's Code Health Review, which is the odd one: it arrives as an App check-run
+# rather than an Actions job, so it has no job log and `gh run list` reports CI green while
+# that check is red. It reports on every pull request, including one that changes no code.
+#
+# CodeQL is not required. Code scanning is free on a public repository and needs GitHub
+# Advanced Security on a private one, so the job stays dormant until the public flip.
 #
 #   1. Publish hygiene  -> identity/infrastructure leaks in tracked files
 #   2. Gitleaks         -> committed credentials, full history
 #   3. Tests + lint     -> both suites offline, plus ruff
-#   4. CodeQL           -> static analysis (free on public repos, see the guard)
+#   4. CodeQL           -> static analysis, dormant while the repository is private
 #   5. CodeScene        -> Code Health gate, App check-run, required on main
 #
 # Deliberately absent: a supply-chain scanner. This repository has no third-party

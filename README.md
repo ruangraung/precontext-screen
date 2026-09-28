@@ -383,8 +383,8 @@ dependencies, so such a job would have nothing to scan while still showing a gre
 - **No content in any log.** Verdicts, hashes, sources, timing. Not the page.
 - **No credentials in the tree.** The key comes from the environment or a cache, and the
   pre-commit hook refuses a commit that introduces a credential.
-- **Five gates on every change**, listed above, plus a `main` ruleset that requires three of
-  them and blocks direct pushes and force pushes.
+- **Five gates on every change**, listed above, plus a `main` ruleset that requires the three
+  Actions jobs and the CodeScene check, and blocks direct pushes and force pushes.
 - **The classifier is a third party.** Your page slices are sent to TypeSafe and judged there.
   If that is not acceptable for some source, do not screen that source; the plugin has no
   local model fallback.
