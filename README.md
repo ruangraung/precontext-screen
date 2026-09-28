@@ -388,6 +388,7 @@ dependencies, so such a job would have nothing to scan while still showing a gre
 - **The classifier is a third party.** Your page slices are sent to TypeSafe and judged there.
   If that is not acceptable for some source, do not screen that source; the plugin has no
   local model fallback.
+- **A security policy with a private reporting route.** See [SECURITY.md](SECURITY.md).
 
 ## AI-assisted development
 

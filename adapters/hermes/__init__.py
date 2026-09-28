@@ -2,7 +2,7 @@
 
 One hook: ``transform_tool_result``. It is the only stage that runs *after* a tool has
 executed and *before* its result enters the model's context, and the only place a plugin
-can replace that result (``model_tools.py::_apply_transform_tool_result_hook`` — first
+can replace that result (``model_tools.py::_apply_transform_tool_result_hook``, first
 string return wins, fail-open).
 
 The judgement itself is not made here. It is delegated to a client that is the single
@@ -99,7 +99,7 @@ CACHE_LIMIT = 256
 BANNER_ADDRESS = "the user"
 
 # Measured against a 12-item authored corpus: 12/12 at these wordings. Do not "improve"
-# them into a compound question — that is exactly what produced the only false positive.
+# them into a compound question, which is exactly what produced the only false positive.
 QUESTIONS: dict[str, dict[str, Any]] = {
     "overrides_or_conceals": {
         "type": "noul",
@@ -149,7 +149,7 @@ def _load_client() -> Any | None:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _client = module
-    except Exception as exc:  # missing file, syntax error, import error — all fail open
+    except Exception as exc:  # missing file, syntax error, import error: all fail open
         _client_failed = True
         logger.warning("precontext-screen: client unavailable (%s); screening disabled", exc)
     return _client
@@ -302,7 +302,7 @@ def _on_transform_tool_result(
         source = _target(args)
         verdict = _screen(result)
         if verdict is None:
-            return None  # screening unavailable — pass through untouched
+            return None  # screening unavailable, pass through untouched
 
         record = {
             "ts": _now(),
@@ -323,7 +323,7 @@ def _on_transform_tool_result(
             _append(SCREEN_LOG, {**record, "verdict": "clean"})
             return None
 
-        # One alert per distinct content per process. The same page fetched twice — a retry,
+        # One alert per distinct content per process. The same page fetched twice, a retry,
         # or two tool calls hitting one URL, is one incident, not two; the digest must
         # not fill up with duplicates. A repeat still gets the banner, because the agent
         # reading it for the first time still needs the warning.

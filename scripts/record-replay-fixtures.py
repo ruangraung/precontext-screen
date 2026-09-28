@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""record-replay-fixtures.py — capture the two answers the offline path replays.
+"""record-replay-fixtures.py: capture the two answers the offline path replays.
 
 The hook suite screens the same two texts on every run. Where the classifier cannot be
 reached, the client answers those exact payloads from a recording instead, which is what

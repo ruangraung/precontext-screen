@@ -8,7 +8,7 @@ run re-delivers rather than losing an alert.
 Deliberately reads only the alert records the plugin wrote: timestamp, tool, source, the
 Jev signals, a content hash, the profile home. Never the screened content itself.
 
-The same page fetched by two profiles is ONE incident, not two — profile homes are separate
+The same page fetched by two profiles is ONE incident, not two: profile homes are separate
 processes, so the digest collapses identical content hashes into one line naming every
 profile that reported it.
 
@@ -187,7 +187,7 @@ def main(argv: list[str]) -> int:
     noun = "page" if len(grouped) == 1 else "pages"
     header = f"🛡️ Injection screen: {len(grouped)} flagged {noun} since last check"
     if len(fresh) != len(grouped):
-        header += f" ({len(fresh)} reports — one page can be seen by both profiles)"
+        header += f" ({len(fresh)} reports, one page seen by both profiles)"
     if show_all:
         header = f"🛡️ Injection screen: {len(grouped)} flagged {noun} on file"
     body = [header, ""]

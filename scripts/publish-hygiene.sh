@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# publish-hygiene.sh — refuses to let machine-specific identity or infrastructure
+# publish-hygiene.sh: refuses to let machine-specific identity or infrastructure
 # reach this repository's tracked files.
 #
 # This repo is meant to be published. Its value is that a stranger can clone it and

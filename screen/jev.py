@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""jev.py — the only thing on this box that talks to api.typesafe.ai.
+"""jev.py: the only thing on this box that talks to api.typesafe.ai.
 
 Design rule: the egress gate is the product, the model call is incidental. Every
 request passes a task class declared in TASKS; a class that is not declared is
@@ -198,7 +198,7 @@ def load_key() -> str | None:
 
 
 def key_state() -> dict:
-    """Booleans and lengths only — never the value, not even partially."""
+    """Booleans and lengths only, never the value, not even partially."""
     env_key = os.environ.get(KEY_NAME)
     cached = load_key() if not env_key else None
     return {
@@ -243,7 +243,7 @@ def guard(
     for marker in refused:
         if marker in state:
             raise PolicyError(
-                f"payload contains private marker {marker!r} — refusing to send under any class"
+                f"payload contains private marker {marker!r}, refusing to send under any class"
             )
     if _KEY_HEADER.search(state):
         raise PolicyError("payload contains a private key header; refusing to send under any class")
@@ -320,7 +320,7 @@ def log_call(record: dict) -> None:
 
 # --- offline replay -----------------------------------------------------------
 # The hook suite screens the same two texts on every run. Where the classifier cannot be
-# reached — a CI runner, a fresh clone with no key — those exact payloads are answered from
+# reached (a CI runner, a fresh clone with no key), those exact payloads are answered from
 # a recording made beforehand by scripts/record-replay-fixtures.py. The match is on the
 # payload digest, so the recording is specific to both the text and the questions asked.
 REPLAY_FILE = Path(
@@ -654,7 +654,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     print(json.dumps(report, indent=2)[:6000])
     if report.get("dry_run"):
-        print("\n(DRY RUN — nothing was sent. Add --live to send.)", file=sys.stderr)
+        print("\n(DRY RUN: nothing was sent. Add --live to send.)", file=sys.stderr)
     return 0
 
 

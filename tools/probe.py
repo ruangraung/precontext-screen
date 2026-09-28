@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""probe.py — measure Jev against objective ground truth before anything ships.
+"""probe.py: measure Jev against objective ground truth before anything ships.
 
 Every call goes through jev.ask(), so the egress gate and the send log apply to
 the probe exactly as they would in production. Three arms:
