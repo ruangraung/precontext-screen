@@ -1,0 +1,18 @@
+{
+  "onboard-new-service": "Register and document a new network service",
+  "logs-triage": "Group noisy log lines and name the likely cause",
+  "dns-records": "Read and edit DNS records for a domain",
+  "backup-verify": "Prove a backup restores, not just that it ran",
+  "sql-migration": "Write and review a database schema migration",
+  "flaky-test-hunt": "Find the source of an intermittent test failure",
+  "cost-report": "Summarise cloud spend per service from a billing export",
+  "cert-renewal": "Check and renew TLS certificates before they expire",
+  "diagram-architecture": "Draw a system diagram from a description",
+  "release-notes": "Turn merged pull requests into release notes",
+  "translate-docs": "Translate documentation and keep the vocabulary consistent",
+  "csv-clean": "Normalise a messy spreadsheet export",
+  "pdf-extract": "Pull tables and text out of a PDF",
+  "incident-timeline": "Build a timeline from chat and alert history",
+  "access-review": "List who can reach what, and flag stale grants",
+  "prompt-eval": "Compare two prompts against a fixed set of cases"
+}

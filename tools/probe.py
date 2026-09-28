@@ -6,7 +6,12 @@ the probe exactly as they would in production. Three arms:
 
   oss_triage   real public issues, graded against the repo's own type/* label
   web_hazard   authored corpus, 6 benign / 6 hostile, labels are known by construction
-  skill_route  synthetic prompts against the example roster defined below
+  skill_route  synthetic prompts routed against a roster you supply
+
+Corpora are read from the first directory that holds the file: JEV_PROBE_DATA if set, then
+the fixtures this repository publishes, then a local probe-data/ directory. Only the
+authored corpus is published; the oss_triage corpus is a snapshot of real public issues, so
+it stays in the working directory that fetched it.
 
 Usage:
   python3 probe.py --arm oss_triage --live
@@ -17,44 +22,65 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+HERE = Path(__file__).resolve().parent
+_CHECKOUT_CLIENT = HERE.parent / "screen" / "jev.py"
+
+# The client sits beside this script in a working install and under screen/ in this
+# repository, so it resolves the same way the adapter resolves it: JEV_STATE_DIR, then the
+# checkout, then this directory.
+CLIENT_DIR = Path(
+    os.environ.get("JEV_STATE_DIR")
+    or (_CHECKOUT_CLIENT.parent if _CHECKOUT_CLIENT.exists() else HERE)
+)
+sys.path.insert(0, str(CLIENT_DIR))
 import jev  # noqa: E402
 
-DATA = Path(__file__).resolve().parent / "probe-data"
+# The directories a corpus may live in, in priority order.
+DATA_DIRS = [
+    directory
+    for directory in (
+        Path(os.environ["JEV_PROBE_DATA"]) if os.environ.get("JEV_PROBE_DATA") else None,
+        HERE.parent / "tests" / "fixtures" / "probe",
+        HERE / "probe-data",
+    )
+    if directory is not None
+]
 
-# The roster the skill_route arm routes against: a name plus a short
-# description, the same shape a host agent's own index would show. These names
-# are invented. Point it at your own roster to measure your own routing, but note
-# that the published 12/12 figure was measured against the roster below, so a
-# different roster means a different measurement.
-ROSTER = {
-    "onboard-new-service": "Register and document a new network service",
-    "logs-triage": "Group noisy log lines and name the likely cause",
-    "dns-records": "Read and edit DNS records for a domain",
-    "backup-verify": "Prove a backup restores, not just that it ran",
-    "sql-migration": "Write and review a database schema migration",
-    "flaky-test-hunt": "Find the source of an intermittent test failure",
-    "cost-report": "Summarise cloud spend per service from a billing export",
-    "cert-renewal": "Check and renew TLS certificates before they expire",
-    "diagram-architecture": "Draw a system diagram from a description",
-    "release-notes": "Turn merged pull requests into release notes",
-    "translate-docs": "Translate documentation and keep the vocabulary consistent",
-    "csv-clean": "Normalise a messy spreadsheet export",
-    "pdf-extract": "Pull tables and text out of a PDF",
-    "incident-timeline": "Build a timeline from chat and alert history",
-    "access-review": "List who can reach what, and flag stale grants",
-    "prompt-eval": "Compare two prompts against a fixed set of cases",
-}
+
+def data_path(filename: str) -> Path:
+    """The first directory that holds this file, or a clear error naming them all."""
+    for directory in DATA_DIRS:
+        candidate = directory / filename
+        if candidate.exists():
+            return candidate
+    searched = ", ".join(str(d) for d in DATA_DIRS)
+    raise FileNotFoundError(f"no {filename} in any data directory ({searched})")
 
 
 def load(name: str) -> list[dict]:
-    path = DATA / f"{name}.jsonl"
+    path = data_path(f"{name}.jsonl")
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+# The skill_route arm routes prompts against a roster you supply: a name plus a short
+# description, the same shape a host agent's own index shows. The example shipped at
+# tests/fixtures/probe/skill_roster.json is invented, and no accuracy figure published with
+# this harness was measured against it, so a number from this arm describes the roster
+# behind it and nothing else. Point JEV_PROBE_ROSTER at your own to measure your own routing.
+def load_roster() -> dict[str, str]:
+    """The roster named by JEV_PROBE_ROSTER, or the example this repository ships."""
+    override = os.environ.get("JEV_PROBE_ROSTER")
+    path = Path(override) if override else data_path("skill_roster.json")
+    blob = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(blob, dict) or not blob:
+        raise ValueError(f"{path} is not a non-empty JSON object of name -> description")
+    return {str(name): str(desc) for name, desc in blob.items()}
 
 
 class Tally:
@@ -106,13 +132,18 @@ class Tally:
 
 
 def arm_oss_triage(limit: int | None) -> Tally:
-    items = load("oss_triage_issues")
+    tally = Tally()
+    try:
+        items = load("oss_triage_issues")
+    except FileNotFoundError as exc:
+        # This corpus is a snapshot of real public issues, so a checkout does not ship it.
+        tally.errors.append(str(exc))
+        return tally
     if limit:
         items = items[:limit]
     classes = sorted({i["type_label"] for i in items})
     criteria = {cls: f"The maintainers labelled this a {cls}" for cls in classes}
     criteria["other"] = "None of the above fits"
-    tally = Tally()
     for item in items:
         state = f"Issue title: {item['title']}\n\nIssue body: {item['body'][:1100]}"
         questions = {
@@ -156,10 +187,14 @@ def arm_oss_triage(limit: int | None) -> Tally:
 
 
 def arm_web_hazard(limit: int | None) -> Tally:
-    items = load("web_hazard")
+    tally = Tally()
+    try:
+        items = load("web_hazard")
+    except FileNotFoundError as exc:
+        tally.errors.append(str(exc))
+        return tally
     if limit:
         items = items[:limit]
-    tally = Tally()
     for item in items:
         questions = {
             "overrides_or_conceals": {
@@ -218,13 +253,19 @@ def arm_web_hazard(limit: int | None) -> Tally:
 
 
 def arm_skill_route(limit: int | None) -> Tally:
-    items = load("skill_route")
+    tally = Tally()
+    try:
+        items = load("skill_route")
+        roster = load_roster()
+    except (FileNotFoundError, ValueError) as exc:
+        # No prompts or no roster in this checkout: report it instead of crashing the run.
+        tally.errors.append(str(exc))
+        return tally
     if limit:
         items = items[:limit]
-    roster_lines = "\n".join(f"- {name}: {desc}" for name, desc in ROSTER.items())
-    criteria = {name: desc for name, desc in ROSTER.items()}
+    roster_lines = "\n".join(f"- {name}: {desc}" for name, desc in roster.items())
+    criteria = {name: desc for name, desc in roster.items()}
     criteria["none"] = "No skill in this list applies to the request"
-    tally = Tally()
     for item in items:
         state = f"Skill index:\n{roster_lines}\n\nUser request: {item['prompt']}"
         questions = {
@@ -308,6 +349,11 @@ def main() -> int:
             print(f"    ERROR {error}")
 
     out["elapsed_s"] = round(time.time() - started, 1)
+    if not sum(summary["n"] for summary in out["arms"].values()):
+        # Nothing was graded: no corpus was found, or every call errored. An exit code of 0
+        # here would launder an empty run as a passing one.
+        print("\nno arm produced a graded row; nothing was measured", file=sys.stderr)
+        return 1
     results_path = Path(__file__).resolve().parent / f"probe-results-{int(time.time())}.json"
     results_path.write_text(json.dumps(out, indent=2))
     print(f"\nfull results -> {results_path}")
