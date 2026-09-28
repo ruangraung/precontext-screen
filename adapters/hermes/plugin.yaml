@@ -1,4 +1,4 @@
-name: jev-screen
+name: precontext-screen
 version: 1.0.0
 description: >-
   Screens untrusted web/browser tool results for prompt injection with TypeSafe Jev

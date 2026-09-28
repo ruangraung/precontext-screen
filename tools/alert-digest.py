@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Delivery for jev-screen: print any NEW injection flags, and nothing when there are none.
+"""Delivery for precontext-screen: print any NEW injection flags, and nothing when there are none.
 
 Runs as a ``no_agent`` Hermes cron job, so the printed text is delivered verbatim to
 Telegram and a silent run costs zero tokens. The cursor is a line count, so an interrupted
 run re-delivers rather than losing an alert.
 
-Deliberately reads only the alert records jev-screen wrote: timestamp, tool, source, the
+Deliberately reads only the alert records the plugin wrote: timestamp, tool, source, the
 Jev signals, a content hash, the profile home. Never the screened content itself.
 
 The same page fetched by two profiles is ONE incident, not two — profile homes are separate
@@ -21,11 +21,26 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-SHARED = Path.home() / ".hermes" / "scripts" / "jev"
+
+def _shared_dir() -> Path:
+    """Where the plugin writes its alerts and where this job reads them.
+
+    The plugin resolves this in one more step than the digest does: a checkout writes
+    beside the client it ships, while a host install writes to the default below. This job
+    runs on the host, so it has no checkout to look beside and JEV_STATE_DIR is the only
+    override it honours. Pointing that at a checkout's screen directory is what lets a
+    clone deliver its own alerts without touching the host queue.
+    """
+    override = os.environ.get("JEV_STATE_DIR")
+    return Path(override) if override else Path.home() / ".hermes" / "scripts" / "jev"
+
+
+SHARED = _shared_dir()
 ALERTS = SHARED / "alerts.jsonl"
 CURSOR = SHARED / "alerts-cursor.json"
 MAX_LINES = 12
@@ -152,7 +167,9 @@ def main(argv: list[str]) -> int:
         records = _load()
         delivered = _read_cursor()
         pending = max(0, len(records) - delivered)
-        print(f"jev-screen alerts: {len(records)} total, {delivered} delivered, {pending} pending")
+        print(
+            f"precontext-screen alerts: {len(records)} total, {delivered} delivered, {pending} pending"
+        )
         print(f"({len(_collapse(records))} distinct page(s) among them)")
         print(f"file: {ALERTS}")
         return 0

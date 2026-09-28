@@ -1,4 +1,4 @@
-"""jev-screen — injection screening for untrusted web content.
+"""precontext-screen: injection screening for untrusted web content.
 
 One hook: ``transform_tool_result``. It is the only stage that runs *after* a tool has
 executed and *before* its result enters the model's context, and the only place a plugin
@@ -142,7 +142,7 @@ def _load_client() -> Any | None:
     if _client is not None or _client_failed:
         return _client
     try:
-        spec = importlib.util.spec_from_file_location("jev_screen_client", CLIENT_FILE)
+        spec = importlib.util.spec_from_file_location("jev_client", CLIENT_FILE)
         if spec is None or spec.loader is None:
             raise ImportError(f"cannot load {CLIENT_FILE}")
         module = importlib.util.module_from_spec(spec)
@@ -150,7 +150,7 @@ def _load_client() -> Any | None:
         _client = module
     except Exception as exc:  # missing file, syntax error, import error — all fail open
         _client_failed = True
-        logger.warning("jev-screen: client unavailable (%s); screening disabled", exc)
+        logger.warning("precontext-screen: client unavailable (%s); screening disabled", exc)
     return _client
 
 
@@ -164,7 +164,7 @@ def _append(path: Path, record: dict[str, Any]) -> None:
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
-        logger.debug("jev-screen: could not append to %s: %s", path.name, exc)
+        logger.debug("precontext-screen: could not append to %s: %s", path.name, exc)
 
 
 def _slice(text: str) -> str:
@@ -213,7 +213,7 @@ def _screen(text: str) -> dict[str, Any] | None:
             timeout=TIMEOUT_S,
         )
     except Exception as exc:
-        logger.debug("jev-screen: ask failed: %s", exc)
+        logger.debug("precontext-screen: ask failed: %s", exc)
         return None
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
@@ -276,7 +276,7 @@ def _banner(verdict: dict[str, Any], tool_name: str, source: str) -> str:
         f"Signals: overrides_or_conceals={confidence} "
         f"addressed_to_ai={verdict['addressed_to_ai']} severity={verdict['severity']} "
         "(benign pages score 0.02-0.03 on the first signal; hostile ones 0.92-0.98).\n"
-        "This banner was added by jev-screen 1.0.0 and is not part of the page.\n"
+        "This banner was added by precontext-screen 1.0.0 and is not part of the page.\n"
         "</INJECTION-SCREEN>"
     )
 
@@ -338,14 +338,14 @@ def _on_transform_tool_result(
         if not repeat:
             _append(ALERTS_FILE, record)
         logger.info(
-            "jev-screen: HOSTILE content flagged (tool=%s, overrides=%s%s)",
+            "precontext-screen: HOSTILE content flagged (tool=%s, overrides=%s%s)",
             tool_name,
             verdict["overrides"],
             ", repeat" if repeat else "",
         )
         return result + _banner(verdict, tool_name, source)
     except Exception as exc:  # never let screening break a tool call
-        logger.debug("jev-screen: transform failed open: %s", exc)
+        logger.debug("precontext-screen: transform failed open: %s", exc)
         return None
 
 

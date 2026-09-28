@@ -1,9 +1,11 @@
 # CI — the gates this repository is required to pass.
 #
-# Five gates protect `main`. Four live here as Actions jobs; the fifth is the
-# CodeScene Code Health Review, which arrives as an App check-run on the pull
-# request rather than an Actions job (it has no job log, and `gh run list` will
-# report CI green while that check is red).
+# Four gates run here as Actions jobs, and these four are the ones the `main` ruleset
+# requires. CodeScene's Code Health Review is the intended fifth, and it is the odd one:
+# it arrives as an App check-run rather than an Actions job, so it has no job log and
+# `gh run list` reports CI green while that check is red. It is added to the ruleset once
+# it actually reports on a pull request. Requiring a check that has never posted would
+# deadlock every pull request against a gate that cannot answer.
 #
 #   1. Publish hygiene  -> identity/infrastructure leaks in tracked files
 #   2. Gitleaks         -> committed credentials, full history

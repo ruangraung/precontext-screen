@@ -3,11 +3,11 @@
 
 No LLM involved. This walks the production path a live agent session walks:
 ``model_tools.handle_function_call`` executes the tool and then calls
-``_apply_transform_tool_result_hook``, which is where jev-screen registers. If a banner
+``_apply_transform_tool_result_hook``, which is where precontext-screen registers. If a banner
 comes back from here, it comes back in a real session too.
 
 Run with the Hermes venv interpreter (the one the agent actually uses):
-    venv/bin/python e2e_jev_screen.py [hostile_url] [benign_url]
+    venv/bin/python e2e_precontext_screen.py [hostile_url] [benign_url]
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ os.environ.setdefault("HERMES_HOME", str(HERMES))
 
 import model_tools  # noqa: E402  (import has the plugin-discovery side effect)
 
-SCRATCH = Path("/tmp/jev-screen-test")
+SCRATCH = Path("/tmp/precontext-screen-test")
 
 
 def redirect_runtime_state() -> ModuleType | None:

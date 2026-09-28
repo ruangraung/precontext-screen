@@ -5,8 +5,8 @@ on the machine that wrote them is tmpfs, so they were one reboot from being gone
 
 | File | What it is |
 |---|---|
-| `test_jev_screen.py` | The hook suite. Registers 16 checks against the hook path a live session calls (`_on_transform_tool_result`): a benign passage passes through byte-identical, an injection is flagged and replaced by the banner, repeat content is served from cache without a second alert, noise is not screened, a missing client fails open, the queued alert carries a verdict and no page content, and the offline path answers recorded content only. Alert and screen-log paths are redirected to `/tmp/jev-screen-test/` so a run can never land in a live queue. |
-| `e2e_jev_screen.py` | End-to-end proof through production discovery: imports `model_tools`, so plugin discovery fires exactly as it does in a live session, then calls `web_extract` for real against a hostile public page and an ordinary documentation page. Two checks: the banner is appended to the hostile result, and the benign result is untouched. Because the run walks the production path, it patches the discovered plugin's alert and screen-log paths to `/tmp/jev-screen-test/` before the first call and refuses to start if that module cannot be found, so it cannot leave a test alert in a live queue. |
+| `test_precontext_screen.py` | The hook suite. Registers 17 checks against the hook path a live session calls (`_on_transform_tool_result`): a benign passage passes through byte-identical, an injection is flagged and replaced by the banner, repeat content is served from cache without a second alert, noise is not screened, a missing client fails open, the queued alert carries a verdict and no page content, the offline path answers recorded content only, and the banner names the plugin exactly as its manifest does. Alert and screen-log paths are redirected to `/tmp/precontext-screen-test/` so a run can never land in a live queue. |
+| `e2e_precontext_screen.py` | End-to-end proof through production discovery: imports `model_tools`, so plugin discovery fires exactly as it does in a live session, then calls `web_extract` for real against a hostile public page and an ordinary documentation page. Two checks: the banner is appended to the hostile result, and the benign result is untouched. Because the run walks the production path, it patches the discovered plugin's alert and screen-log paths to `/tmp/precontext-screen-test/` before the first call and refuses to start if that module cannot be found, so it cannot leave a test alert in a live queue. |
 | `fixtures/hostile.html`, `fixtures/benign.html` | The two pages the end-to-end run fetched, kept as offline fixtures. The script itself defaults to live URLs. |
 | `fixtures/classifier/replay.json` | Recorded classifier answers for the hook suite's two texts, keyed by payload digest. Replayed only when `JEV_OFFLINE` is set or no key resolves, and only for an exact digest match, so an unseen payload still fails instead of receiving a canned verdict. Re-record with `python3 scripts/record-replay-fixtures.py`. |
 | `fixtures/probe/web_hazard.jsonl` | The authored corpus the probe harness grades: 12 passages, 6 benign and 6 hostile, labels true by construction. This is the corpus behind the published N=12 figure. |
@@ -14,14 +14,15 @@ on the machine that wrote them is tmpfs, so they were one reboot from being gone
 
 ## Running them
 
-- `test_jev_screen.py` is stdlib only and runs under any `python3`. It loads the adapter in
-  this checkout by default, so a clone tests what it ships. To test an installed copy
-  instead: `JEV_PLUGIN_PATH=~/.hermes/plugins/jev-screen/__init__.py python3 tests/test_jev_screen.py`
+- `test_precontext_screen.py` is stdlib only and runs under any `python3`. It loads the
+  adapter in this checkout by default, so a clone tests what it ships. To test an installed
+  copy instead:
+  `JEV_PLUGIN_PATH=~/.hermes/plugins/<plugin-name>/__init__.py python3 tests/test_precontext_screen.py`
 - Screening reaches the classifier when a key is present and replays the recording in
   `fixtures/classifier/replay.json` when it is not, so the suite is a gate on a machine with
   no key. Force the offline path with `JEV_OFFLINE=1`.
-- `e2e_jev_screen.py` must run under the interpreter the agent uses:
-  `~/.hermes/hermes-agent/venv/bin/python e2e_jev_screen.py`, with `HOST_E2E=1` through
+- `e2e_precontext_screen.py` must run under the interpreter the agent uses:
+  `~/.hermes/hermes-agent/venv/bin/python e2e_precontext_screen.py`, with `HOST_E2E=1` through
   `scripts/run-suites.sh`. It imports the host's own modules, so it cannot run in CI.
 - Neither suite is pytest. Both are scripts that print `N/N checks passed` and exit non-zero
   on failure.

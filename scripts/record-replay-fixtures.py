@@ -40,7 +40,7 @@ def load(name: str, path: Path) -> Any:
 def main() -> int:
     client = load("jev_client", ROOT / "screen" / "jev.py")
     adapter = load("precontext_adapter", ROOT / "adapters" / "hermes" / "__init__.py")
-    suite = load("hook_suite", ROOT / "tests" / "test_jev_screen.py")
+    suite = load("hook_suite", ROOT / "tests" / "test_precontext_screen.py")
 
     responses: dict[str, dict] = {}
     for label, text in (("benign", suite.BENIGN), ("hostile", suite.HOSTILE)):
