@@ -13,6 +13,10 @@ Offline tests (no network, no key needed):  python3 jev.py selftest
 Key presence, booleans only:               python3 jev.py key-check
 Preview a real payload:                    python3 jev.py ask --class <c> --state-file <f> --questions-file <f>
 Send it:                                   python3 jev.py ask --class <c> ... --live
+
+A recorded answer can stand in for the network call in exactly two cases: JEV_OFFLINE is
+set, or no key resolves. Either way the substitution is exact-match only, keyed on the
+payload digest, so an unseen payload still fails rather than receiving a canned verdict.
 """
 
 from __future__ import annotations
@@ -32,7 +36,11 @@ from pathlib import Path
 ENDPOINT = os.environ.get("TYPESAFE_ENDPOINT") or "https://api.typesafe.ai/v1/systemone"
 DEFAULT_MODEL = os.environ.get("TYPESAFE_MODEL") or "jev-latest"
 KEY_NAME = "TYPESAFE_API_KEY"
-BWS_CACHE = Path.home() / ".hermes" / "cache" / "bws_cache.json"
+# Second key source: a JSON cache holding a "secrets" map. The default path is this host's
+# layout, so it is overridable for installs that keep the cache somewhere else.
+BWS_CACHE = Path(
+    os.environ.get("JEV_KEY_CACHE") or (Path.home() / ".hermes" / "cache" / "bws_cache.json")
+)
 HOME_DIR = Path(__file__).resolve().parent
 LOG_PATH = HOME_DIR / "send-log.jsonl"
 
@@ -310,6 +318,37 @@ def log_call(record: dict) -> None:
     os.chmod(LOG_PATH, 0o600)
 
 
+# --- offline replay -----------------------------------------------------------
+# The hook suite screens the same two texts on every run. Where the classifier cannot be
+# reached — a CI runner, a fresh clone with no key — those exact payloads are answered from
+# a recording made beforehand by scripts/record-replay-fixtures.py. The match is on the
+# payload digest, so the recording is specific to both the text and the questions asked.
+REPLAY_FILE = Path(
+    os.environ.get("JEV_REPLAY_FILE")
+    or (HOME_DIR.parent / "tests" / "fixtures" / "classifier" / "replay.json")
+)
+
+
+def replay_enabled() -> bool:
+    """True when a recorded answer may stand in for the network call."""
+    if os.environ.get("JEV_OFFLINE"):
+        return True
+    return not load_key()
+
+
+def replay_lookup(payload_sha256: str) -> dict | None:
+    """The recorded answers for this exact payload, or None. An unseen payload never replays."""
+    if not replay_enabled():
+        return None
+    try:
+        blob = json.loads(REPLAY_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    responses = blob.get("responses") if isinstance(blob, dict) else None
+    entry = responses.get(payload_sha256) if isinstance(responses, dict) else None
+    return dict(entry) if isinstance(entry, dict) else None
+
+
 def ask(
     task_class: str,
     state: str,
@@ -333,6 +372,19 @@ def ask(
     }
     if dry_run:
         return report
+
+    started = time.monotonic()
+    recorded = replay_lookup(digest)
+    if recorded is not None:
+        report.update(recorded)
+        report["replayed"] = True
+        report["latency_ms"] = round((time.monotonic() - started) * 1000, 1)
+        return report
+    if os.environ.get("JEV_OFFLINE"):
+        raise PolicyError(
+            f"JEV_OFFLINE is set and {REPLAY_FILE} holds no recording for this payload; "
+            "refusing to reach the network"
+        )
 
     key = load_key()
     if not key:

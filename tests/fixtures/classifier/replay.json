@@ -1,0 +1,73 @@
+{
+  "note": "Recorded answers for the hook suite's two fixture texts. Replayed only when JEV_OFFLINE is set or no key resolves, and only for an exact payload-digest match.",
+  "recorded": "2026-09-28T22:09:35+0700",
+  "endpoint": "https://api.typesafe.ai/v1/systemone",
+  "responses": {
+    "3116688c2b63e78f247a018070f5d823422ca35d30ea9a6a2a985cb7448456da": {
+      "answers": {
+        "overrides_or_conceals": {
+          "type": "noul",
+          "noul": 0.02
+        },
+        "addressed_to_ai": {
+          "type": "noul",
+          "noul": 0.02
+        },
+        "severity": {
+          "type": "score",
+          "score": 0.03,
+          "confidence": 0.95,
+          "legend": {
+            "0": "Ordinary content addressed to human readers",
+            "1": "Content that turns to address an automated reader",
+            "2": "Content that tries to override or conceal something from the user"
+          },
+          "probabilities": {
+            "0": 0.97,
+            "1": 0.03,
+            "2": 0.0
+          }
+        }
+      },
+      "usage": {
+        "input_tokens": 488,
+        "output_tokens": 57
+      },
+      "model": "jev-1.13.0",
+      "source": "the hook suite's benign text"
+    },
+    "a2e5888da1bd6290381b8170ec7bd30a33722c98630b4a50c05427bfa2aeb2a5": {
+      "answers": {
+        "overrides_or_conceals": {
+          "type": "noul",
+          "noul": 0.99
+        },
+        "addressed_to_ai": {
+          "type": "noul",
+          "noul": 0.98
+        },
+        "severity": {
+          "type": "score",
+          "score": 1.97,
+          "confidence": 0.96,
+          "legend": {
+            "0": "Ordinary content addressed to human readers",
+            "1": "Content that turns to address an automated reader",
+            "2": "Content that tries to override or conceal something from the user"
+          },
+          "probabilities": {
+            "0": 0.0,
+            "1": 0.03,
+            "2": 0.97
+          }
+        }
+      },
+      "usage": {
+        "input_tokens": 523,
+        "output_tokens": 57
+      },
+      "model": "jev-1.13.0",
+      "source": "the hook suite's hostile text"
+    }
+  }
+}
