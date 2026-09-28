@@ -3,10 +3,14 @@
 _staging/
 
 # Runtime state produced by the screener. Never publish: these carry real verdicts
-# and the URLs they were taken on.
+# and the URLs they were taken on. The authored corpus the probe harness ships lives
+# under tests/fixtures/probe/, not here: this directory is ignored precisely because a
+# run against real sources fills it with fetched data.
 send-log.jsonl
 screen-log.jsonl
 alerts*.jsonl
+alerts-cursor.json
+probe-results-*.json
 probe-data/
 *.log
 
