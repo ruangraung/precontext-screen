@@ -24,6 +24,8 @@ run() {
 
 run "hook suite" python3 tests/test_precontext_screen.py
 
+run "publish-hygiene gate" bash tests/test_publish_hygiene.sh
+
 if [ "${HOST_E2E:-0}" = "1" ]; then
     run "end-to-end proof" python3 tests/e2e_precontext_screen.py
 else

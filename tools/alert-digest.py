@@ -124,7 +124,12 @@ def _collapse(records: list[dict]) -> list[dict]:
 
 
 def _fmt_ts(iso: str) -> str:
-    """UTC iso -> local wall clock for the configured zone (default Asia/Jakarta)."""
+    """UTC iso -> local wall clock for the host's zone.
+
+    No zone is hardcoded or defaulted here: `astimezone()` with no argument follows the
+    host, and the standard `TZ` environment variable overrides it. Set `TZ` to pin a zone
+    for a digest run that has to read the same way on a different machine.
+    """
     try:
         stamp = datetime.fromisoformat(iso)
         if stamp.tzinfo is None:

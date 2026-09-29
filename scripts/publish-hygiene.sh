@@ -1,41 +1,90 @@
 #!/usr/bin/env bash
-# publish-hygiene.sh: refuses to let machine-specific identity or infrastructure
-# reach this repository's tracked files.
+# Refuses machine-specific identity or infrastructure in this repository's tracked files. The
+# repo is meant to be published, and a reviewer remembering the do-not list is not a gate.
 #
-# This repo is meant to be published. Its value is that a stranger can clone it and
-# run it without inheriting anything about the machine it was written on. A reviewer
-# remembering the do-not list is not a gate; this script does not forget, and it runs
-# on every push instead of every time someone remembers.
-#
-# Scope: TRACKED files only (`git ls-files`). Local notes under .pi/ are untracked by
-# design and are never scanned, which is what lets this repo carry internal notes at
-# all. This script excludes itself, because it necessarily contains every pattern it
-# searches for.
-#
-# Exit 0 = clean. Exit 1 = at least one FAIL pattern is present.
+# Patterns come from three sources: the generic shapes below (shipped, so CI has them),
+# scripts/hygiene-patterns.local.txt (untracked and gitignored, absent in CI by design, because
+# a published repo should not carry the list of terms it protects), and $HYGIENE_PATTERNS.
+# Every run prints what each source contributed. Exit 1 on a finding or an empty rule set.
 set -uo pipefail
 
-# FAIL: identity or infrastructure. These never belong in a published tree.
-read -r -d '' FAIL_PATTERNS <<'PATTERNS' || true
-example-private-notes
-example-build-host
-example-memory-store
-example-username
-100\.(6[4-9]|[7-9][0-9]|1[0-2][0-9])\.[0-9]{1,3}\.[0-9]{1,3}
+# No pattern may match its own definition: this file is scanned like any other. The third stays
+# narrow because a bare absolute-home match also hits a fixture's example home.
+read -r -d '' BUILTIN_FAIL <<'PATTERNS' || true
+\b100\.(6[4-9]|[7-9][0-9]|1[0-2][0-9])\.[0-9]{1,3}\.[0-9]{1,3}\b
+[A-Za-z0-9-]+\.internal\b
+/(home|Users)/[A-Za-z0-9._-]+/\.hermes
 PATTERNS
 
-# WARN: internal flavour. Not a leak, but a reader does not need it, so it is
-# reported without failing the build.
-read -r -d '' WARN_PATTERNS <<'PATTERNS' || true
-example-llm-provider
+# Reported, never fatal. Personal entries belong in the local patterns file as "WARN <regex>".
+BUILTIN_WARN=""
 
-PATTERNS
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 
-SELF='scripts/publish-hygiene.sh'
-fails=0
-warns=0
+PATTERNS_FILE="${HYGIENE_PATTERNS_FILE:-}"
+if [ -z "$PATTERNS_FILE" ] && [ -n "$REPO_ROOT" ]; then
+    PATTERNS_FILE="$REPO_ROOT/scripts/hygiene-patterns.local.txt"
+fi
 
-if ! git rev-parse --git-dir >/dev/null 2>&1; then
+LOCAL_FAIL=''
+LOCAL_WARN=''
+LOCAL_FAIL_N=0
+LOCAL_WARN_N=0
+if [ -n "$PATTERNS_FILE" ] && [ -f "$PATTERNS_FILE" ]; then
+    while IFS= read -r raw || [ -n "$raw" ]; do
+        line="${raw%$'\r'}"
+        case "$line" in '' | '#'*) continue ;; esac
+        case "$line" in
+            'WARN '*)
+                LOCAL_WARN="${LOCAL_WARN}${line#WARN }"$'\n'
+                LOCAL_WARN_N=$((LOCAL_WARN_N + 1))
+                ;;
+            *)
+                LOCAL_FAIL="${LOCAL_FAIL}${line}"$'\n'
+                LOCAL_FAIL_N=$((LOCAL_FAIL_N + 1))
+                ;;
+        esac
+    done < "$PATTERNS_FILE"
+fi
+
+ENV_FAIL=''
+ENV_FAIL_N=0
+if [ -n "${HYGIENE_PATTERNS:-}" ]; then
+    while IFS= read -r raw || [ -n "$raw" ]; do
+        case "$raw" in '' | '#'*) continue ;; esac
+        ENV_FAIL="${ENV_FAIL}${raw}"$'\n'
+        ENV_FAIL_N=$((ENV_FAIL_N + 1))
+    done <<< "$HYGIENE_PATTERNS"
+fi
+
+count_patterns() { printf '%s\n' "$1" | grep -c . || true; }
+
+BUILTIN_FAIL_N=$(count_patterns "$BUILTIN_FAIL")
+BUILTIN_WARN_N=$(count_patterns "$BUILTIN_WARN")
+# printf, not bare concatenation: `read -d ''` trims the trailing newline off the builtin
+# block, so joining the sources directly welds its last pattern onto the first local one.
+FAIL_PATTERNS=$(printf '%s\n%s\n%s\n' "$BUILTIN_FAIL" "$LOCAL_FAIL" "$ENV_FAIL")
+WARN_PATTERNS=$(printf '%s\n%s\n' "$BUILTIN_WARN" "$LOCAL_WARN")
+FAIL_N=$(count_patterns "$FAIL_PATTERNS")
+WARN_N=$(count_patterns "$WARN_PATTERNS")
+
+echo "publish-hygiene: pattern sources"
+printf '  %-8s %2d fail, %2d warn  (shipped with the repo)\n' builtin "$BUILTIN_FAIL_N" "$BUILTIN_WARN_N"
+if [ -n "$PATTERNS_FILE" ] && [ -f "$PATTERNS_FILE" ]; then
+    printf '  %-8s %2d fail, %2d warn  (%s)\n' file "$LOCAL_FAIL_N" "$LOCAL_WARN_N" "$PATTERNS_FILE"
+else
+    printf '  %-8s %2d fail, %2d warn  (absent: %s)\n' file 0 0 "${PATTERNS_FILE:-<unset>}"
+fi
+printf '  %-8s %2d fail, %2d warn  (HYGIENE_PATTERNS)\n' env "$ENV_FAIL_N" 0
+echo
+
+# Fail closed: an empty rule set proves nothing about the tree.
+if [ "$FAIL_N" -eq 0 ]; then
+    echo "publish-hygiene FAILED (fail closed): 0 FAIL patterns loaded, so this run proves nothing."
+    exit 1
+fi
+
+if [ -z "$REPO_ROOT" ]; then
     echo "not a git repository; nothing to scan"
     exit 0
 fi
@@ -44,21 +93,18 @@ TRACKED=$(git ls-files)
 TRACKED_COUNT=$(printf '%s\n' "$TRACKED" | grep -c . || true)
 UNTRACKED_COUNT=$(git ls-files --others --exclude-standard | grep -c . || true)
 
-# Fail closed on a vacuous pass. A gate that reports success because it had nothing
-# to look at is worse than no gate: it launders an unscanned tree as a clean one.
-# (This actually happened while wiring the repo: nothing was committed yet, so the
-# first run scanned zero files and printed "passed". The denominator below is the
-# structural fix; this guard is the loud one.)
+# Fail closed: 0 tracked files means nothing was scanned, which is not the same as a clean tree.
 if [ "$TRACKED_COUNT" -eq 0 ] && [ "$UNTRACKED_COUNT" -gt 0 ]; then
     echo "publish-hygiene FAILED (fail closed): 0 tracked files but $UNTRACKED_COUNT untracked file(s) present."
     echo "There is nothing to scan, so there is nothing to trust. Stage or commit the tree first."
     exit 1
 fi
 
+fails=0
+warns=0
 scanned=0
 while IFS= read -r file; do
     [ -z "$file" ] && continue
-    [ "$file" = "$SELF" ] && continue
     [ -f "$file" ] || continue
     grep -Iq . "$file" 2>/dev/null || continue   # skip binaries
     scanned=$((scanned + 1))
@@ -89,9 +135,11 @@ done <<< "$TRACKED"
 if [ $fails -gt 0 ]; then
     echo
     echo "publish-hygiene FAILED: $fails finding(s) across $scanned scanned file(s), $warns warning(s)."
-    echo "Genericize the offending lines (config plus a generic example) before this tree is published."
+    echo "Genericize the offending lines (config plus a generic example) before this tree is"
+    echo "published. If a pattern matched a term that belongs only on your machine, move that"
+    echo "pattern into scripts/hygiene-patterns.local.txt rather than leaving the term in the tree."
     exit 1
 fi
 
-echo "publish-hygiene passed: scanned $scanned file(s), no identity or infrastructure leaks, $warns warning(s)."
+echo "publish-hygiene passed: scanned $scanned file(s) against $FAIL_N fail pattern(s) and $WARN_N warn pattern(s), $warns warning(s)."
 exit 0

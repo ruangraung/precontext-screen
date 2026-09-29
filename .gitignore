@@ -2,6 +2,10 @@
 .pi/
 _staging/
 
+# The real hygiene terms live here, untracked and unpublished. Format:
+# scripts/hygiene-patterns.example.txt.
+scripts/hygiene-patterns.local.txt
+
 # Runtime state produced by the screener. Never publish: these carry real verdicts
 # and the URLs they were taken on. The authored corpus the probe harness ships lives
 # under tests/fixtures/probe/, not here: this directory is ignored precisely because a
