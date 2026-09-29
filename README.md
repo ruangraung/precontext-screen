@@ -306,8 +306,16 @@ does not travel with a clone. Turn it on after cloning:
 git config core.hooksPath .githooks    # requires gitleaks >= 8.19 on PATH
 ```
 
-That hook refuses a commit whose staged changes contain a credential, and it fails closed: if
-gitleaks is missing, it refuses instead of passing silently.
+That hook runs two gates: it refuses a commit whose staged changes contain a credential, then
+runs `scripts/publish-hygiene.sh` over the tracked tree. Both fail closed. A missing gitleaks
+refuses the commit, and the hygiene gate refuses rather than report an empty rule set as clean.
+
+To give the hygiene gate your own terms, copy the example over. That file is gitignored and is
+never published:
+
+```bash
+cp scripts/hygiene-patterns.example.txt scripts/hygiene-patterns.local.txt
+```
 
 ## Testing
 
@@ -360,9 +368,14 @@ raises rather than receiving a canned verdict. Re-record it with
 
 ### CI gates
 
-Every push to `main` and every pull request runs five:
+Every push to `main` and every pull request runs four gates, plus a fifth that stays dormant
+until the repository is public:
 
 1. **Publish hygiene**, which refuses internal identity or infrastructure in any tracked file.
+   Generic shapes ship with the repository. Your own terms live in an untracked
+   `scripts/hygiene-patterns.local.txt`, which the gate reads when present and which is absent
+   in CI, so a published repository never carries the list of terms it protects. The pre-commit
+   hook runs the same script, and that is where those terms act. Every run prints what it loaded.
 2. **Gitleaks**, every commit rather than a push range, with the binary pinned.
 3. **Tests plus lint**: both suites offline, `ruff check`, and `ruff format --check`.
 4. **CodeQL**, dormant while the repository is private because code scanning needs GitHub

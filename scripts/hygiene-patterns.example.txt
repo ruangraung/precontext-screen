@@ -1,0 +1,24 @@
+# Format for scripts/hygiene-patterns.local.txt, which is untracked and gitignored. Copy this
+# file to that name on your machine and put your real terms in it:
+#
+#   cp scripts/hygiene-patterns.example.txt scripts/hygiene-patterns.local.txt
+#
+# publish-hygiene.sh reads it when present and is published without it, so the terms never
+# reach the tree or a clone. In CI the file is absent and the gate runs the generic shapes
+# only. Set $HYGIENE_PATTERNS_FILE to keep the list outside the checkout entirely.
+#
+# One extended regex per line, matched case-insensitively against every tracked file. Blank
+# lines and lines beginning with `#` are ignored. A line beginning with `WARN ` reports a
+# match without failing the gate; every other line is a FAIL pattern.
+#
+# Only machine-specific terms belong here: hostnames, usernames, home directory names, private
+# system names, and vendors you would rather not publish. Never add a term that a legitimate
+# part of this repository contains, because the gate scans the whole tracked tree and such a
+# pattern would fail every run, CI included.
+#
+# Examples, all placeholders, none of which match anything here:
+#
+# example-username
+# example-build-host
+# example-private-service
+# WARN example-vendor-name
