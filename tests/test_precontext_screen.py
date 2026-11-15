@@ -222,11 +222,25 @@ def main() -> int:
         f"alerts {alerts_before} -> {line_count(TMP_ALERTS)}",
     )
 
-    # 4. noise is not screened
+    # 4. a tiny result reaches the screener: the length floor is gone, so a short
+    # steering payload cannot bypass screening by being short. Offline, an unrecorded
+    # tiny payload still fails open, which is why the return is None either way.
+    screen_calls = []
+    original_screen = mod._screen
+
+    def spy_screen(text):
+        screen_calls.append(text)
+        return original_screen(text)
+
+    mod._screen = spy_screen
+    out_t = mod._on_transform_tool_result(
+        tool_name="web_extract", args={}, result="ok", duration_ms=1
+    )
+    mod._screen = original_screen
     check(
-        "tiny result skipped",
-        mod._on_transform_tool_result(tool_name="web_extract", args={}, result="ok", duration_ms=1)
-        is None,
+        "tiny result reaches the screener",
+        screen_calls == ["ok"] and out_t is None,
+        f"calls {screen_calls}, returned {out_t!r}",
     )
     check(
         "unscreened tool skipped",

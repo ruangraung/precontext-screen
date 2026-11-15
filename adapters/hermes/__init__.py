@@ -84,7 +84,6 @@ SCREENED_TOOLS = frozenset(
 
 HEAD_CHARS = 1400
 TAIL_CHARS = 600
-MIN_CHARS = 40
 TIMEOUT_S = 8.0
 # The measured separation on this question is a wide gap that no observed page sits
 # inside: 0.02 to 0.03 benign against 0.92 and above hostile, so any cut in between is
@@ -296,8 +295,8 @@ def _on_transform_tool_result(
     try:
         if tool_name not in SCREENED_TOOLS:
             return None
-        if not isinstance(result, str) or len(result) < MIN_CHARS:
-            return None
+        if not isinstance(result, str) or not result:
+            return None  # nothing to screen
 
         source = _target(args)
         verdict = _screen(result)
