@@ -190,6 +190,28 @@ def _target(args: Any) -> str:
     return ""
 
 
+def _cache_put(digest: str, verdict: dict[str, Any]) -> None:
+    """Bound the cache and store the verdict for this content."""
+    with _cache_lock:
+        if len(_cache) >= CACHE_LIMIT:
+            _cache.clear()
+        _cache[digest] = verdict
+
+
+def _guard_refusal(client: Any, payload: str) -> bool:
+    """The gate's own refusal decision, taken before the classifier call.
+
+    The gate refuses to transmit a credential-shaped payload under any task class, so
+    this outcome exists whether or not a key resolves: the content is judged by the
+    gate, not left unjudged.
+    """
+    try:
+        client.guard("web_hazard", payload)
+    except client.PolicyError:
+        return True
+    return False
+
+
 def _screen(text: str) -> dict[str, Any] | None:
     """Ask the gate. Returns a verdict dict, or None when screening is unavailable."""
     digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
@@ -205,9 +227,7 @@ def _screen(text: str) -> dict[str, Any] | None:
         return None
     payload = _slice(text)
     started = time.monotonic()
-    try:
-        client.guard("web_hazard", payload)
-    except client.PolicyError:
+    if _guard_refusal(client, payload):
         # The egress gate refuses the payload itself, so the classifier never sees it.
         # That is a screening outcome, not a screening failure: record it and let the
         # hook banner the content instead of passing it through unmarked.
@@ -217,10 +237,7 @@ def _screen(text: str) -> dict[str, Any] | None:
             "chars": len(text),
             "screened_chars": len(payload),
         }
-        with _cache_lock:
-            if len(_cache) >= CACHE_LIMIT:
-                _cache.clear()
-            _cache[digest] = refusal
+        _cache_put(digest, refusal)
         return refusal
     try:
         report = client.ask(
@@ -266,10 +283,7 @@ def _screen(text: str) -> dict[str, Any] | None:
         "dry_run": report.get("dry_run"),
         "redactions": report.get("redactions") or {},
     }
-    with _cache_lock:
-        if len(_cache) >= CACHE_LIMIT:
-            _cache.clear()
-        _cache[digest] = verdict
+    _cache_put(digest, verdict)
     return verdict
 
 

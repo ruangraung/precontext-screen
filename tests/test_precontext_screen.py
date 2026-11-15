@@ -151,6 +151,59 @@ def offline_path_checks(mod, check, client) -> None:
             os.environ["JEV_OFFLINE"] = previous
 
 
+def refused_checks(mod, client, check) -> None:
+    """Section 4b: a refused marker is a screening outcome, not a silent failure.
+
+    The gate refuses to transmit the payload, the hook records the refusal, and the
+    agent gets a banner whose verdict says the usual judgement is absent. The marker is
+    installed on the client for this section only, so no real credential shape lives in
+    the tree.
+    """
+    if client is None:
+        print("refusal path: not tested (the client under test did not load)")
+        return
+    original_markers = client.PRIVATE_MARKERS
+    client.PRIVATE_MARKERS = ("PRECONTEXT_TEST_MARKER",)
+    refused_page = BENIGN + "\nThis page embeds PRECONTEXT_TEST_MARKER in a comment.\n"
+    alerts_before_refused = line_count(TMP_ALERTS)
+    out_r = mod._on_transform_tool_result(
+        tool_name="web_extract",
+        args={"url": "https://example.com/keyed"},
+        result=refused_page,
+        duration_ms=5,
+        session_id="test-1",
+    )
+    refused = isinstance(out_r, str)
+    check(
+        "refused page gets the refusal banner",
+        refused and '<INJECTION-SCREEN verdict="refused">' in (out_r or ""),
+    )
+    if refused:
+        check("refused page content preserved under the banner", refused_page in out_r)
+        check(
+            "refusal says the usual verdict is missing",
+            "the usual screening verdict is missing" in out_r,
+        )
+    check(
+        "refusal alerted exactly once",
+        line_count(TMP_ALERTS) == alerts_before_refused + 1,
+        f"alerts {alerts_before_refused} -> {line_count(TMP_ALERTS)}",
+    )
+    out_r2 = mod._on_transform_tool_result(
+        tool_name="browser_exec",
+        args={"code": "open_page()"},
+        result=refused_page,
+        duration_ms=5,
+        session_id="test-1",
+    )
+    check(
+        "refused repeat is bannered but not re-alerted",
+        isinstance(out_r2, str) and line_count(TMP_ALERTS) == alerts_before_refused + 1,
+        f"alerts {alerts_before_refused} -> {line_count(TMP_ALERTS)}",
+    )
+    client.PRIVATE_MARKERS = original_markers
+
+
 def main() -> int:
     TMP_ALERTS.parent.mkdir(parents=True, exist_ok=True)
     for stale in (TMP_ALERTS, TMP_LOG):
@@ -236,51 +289,8 @@ def main() -> int:
         is None,
     )
 
-    # 4b. a page carrying a refused marker is a screening OUTCOME, not a silent failure:
-    # the gate refuses to transmit it, the hook records the refusal, and the agent gets
-    # a banner whose verdict says the usual judgement is absent. The marker is installed
-    # on the client for this section only, so no real credential shape lives in the tree.
-    if client is not None:
-        original_markers = client.PRIVATE_MARKERS
-        client.PRIVATE_MARKERS = ("PRECONTEXT_TEST_MARKER",)
-        refused_page = BENIGN + "\nThis page embeds PRECONTEXT_TEST_MARKER in a comment.\n"
-        alerts_before_refused = line_count(TMP_ALERTS)
-        out_r = mod._on_transform_tool_result(
-            tool_name="web_extract",
-            args={"url": "https://example.com/keyed"},
-            result=refused_page,
-            duration_ms=5,
-            session_id="test-1",
-        )
-        refused = isinstance(out_r, str)
-        check(
-            "refused page gets the refusal banner",
-            refused and '<INJECTION-SCREEN verdict="refused">' in (out_r or ""),
-        )
-        if refused:
-            check("refused page content preserved under the banner", refused_page in out_r)
-            check(
-                "refusal says the usual verdict is missing",
-                "the usual screening verdict is missing" in out_r,
-            )
-        check(
-            "refusal alerted exactly once",
-            line_count(TMP_ALERTS) == alerts_before_refused + 1,
-            f"alerts {alerts_before_refused} -> {line_count(TMP_ALERTS)}",
-        )
-        out_r2 = mod._on_transform_tool_result(
-            tool_name="browser_exec",
-            args={"code": "open_page()"},
-            result=refused_page,
-            duration_ms=5,
-            session_id="test-1",
-        )
-        check(
-            "refused repeat is bannered but not re-alerted",
-            isinstance(out_r2, str) and line_count(TMP_ALERTS) == alerts_before_refused + 1,
-            f"alerts {alerts_before_refused} -> {line_count(TMP_ALERTS)}",
-        )
-        client.PRIVATE_MARKERS = original_markers
+    # 4b. a page carrying a refused marker is a screening OUTCOME, not a silent failure.
+    refused_checks(mod, client, check)
 
     # 5. missing client fails open: the whole point of the design
     good_client, good_path = mod._client, mod.CLIENT_FILE
