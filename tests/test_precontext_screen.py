@@ -204,25 +204,9 @@ def refused_checks(mod, client, check) -> None:
     client.PRIVATE_MARKERS = original_markers
 
 
-def main() -> int:
-    TMP_ALERTS.parent.mkdir(parents=True, exist_ok=True)
-    for stale in (TMP_ALERTS, TMP_LOG):
-        stale.unlink(missing_ok=True)
-
-    checks: list[tuple[str, bool, str]] = []
-
-    def check(name: str, ok: bool, detail: str = "") -> None:
-        checks.append((name, bool(ok), detail))
-
-    mod = load()
-
-    client = mod._load_client()
-    state_dir = getattr(mod, "STATE_DIR", None) or getattr(mod, "SHARED_DIR", "?")
-    print(f"plugin under test:   {mod.__file__}")
-    print(f"runtime state in:    {state_dir}")
-    print(f"classifier:          {classifier_label(client)}")
-    print()
-
+def flagging_checks(mod, check) -> None:
+    """Sections 1-4: what passes through, what is flagged, what the cache serves, what is
+    never screened at all."""
     # 1. a benign passage passes through byte-identical
     out = mod._on_transform_tool_result(
         tool_name="web_extract",
@@ -289,10 +273,9 @@ def main() -> int:
         is None,
     )
 
-    # 4b. a page carrying a refused marker is a screening OUTCOME, not a silent failure.
-    refused_checks(mod, client, check)
 
-    # 5. missing client fails open: the whole point of the design
+def fail_open_checks(mod, check) -> None:
+    """Section 5: a missing client fails open, the whole point of the design."""
     good_client, good_path = mod._client, mod.CLIENT_FILE
     mod._client, mod._client_failed = None, False
     mod.CLIENT_FILE = Path("/tmp/precontext-screen-test/does-not-exist.py")
@@ -304,6 +287,35 @@ def main() -> int:
         "client missing -> fails open (result untouched)", out3 is None, f"returned {out3!r}"[:60]
     )
     mod._client, mod.CLIENT_FILE, mod._client_failed = good_client, good_path, False
+
+
+def main() -> int:
+    TMP_ALERTS.parent.mkdir(parents=True, exist_ok=True)
+    for stale in (TMP_ALERTS, TMP_LOG):
+        stale.unlink(missing_ok=True)
+
+    checks: list[tuple[str, bool, str]] = []
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        checks.append((name, bool(ok), detail))
+
+    mod = load()
+
+    client = mod._load_client()
+    state_dir = getattr(mod, "STATE_DIR", None) or getattr(mod, "SHARED_DIR", "?")
+    print(f"plugin under test:   {mod.__file__}")
+    print(f"runtime state in:    {state_dir}")
+    print(f"classifier:          {classifier_label(client)}")
+    print()
+
+    # Sections 1-4: pass-through, flagging, cache, and what is never screened.
+    flagging_checks(mod, check)
+
+    # 4b. a page carrying a refused marker is a screening OUTCOME, not a silent failure.
+    refused_checks(mod, client, check)
+
+    # 5. missing client fails open: the whole point of the design.
+    fail_open_checks(mod, check)
 
     # 6. alert record carries what the digest needs, and no page content
     print("--- alert record written to the queue ---")

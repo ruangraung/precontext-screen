@@ -338,6 +338,33 @@ def _refusal_banner(tool_name: str, source: str) -> str:
     )
 
 
+def _refused_outcome(verdict: dict[str, Any], tool_name: str, source: str, session_id: str) -> str:
+    """Record a refusal like a verdict and hand back the banner for it.
+
+    A policy refusal is not a screening failure: the gate saw the content and declined
+    to transmit it. The record and the alert mirror the hostile path, one per distinct
+    page per process, and the banner says the usual verdict is absent.
+    """
+    refusal_record = {
+        "ts": _now(),
+        "tool": tool_name,
+        "source": source,
+        "sha256": verdict["sha256"],
+        "chars": verdict["chars"],
+        "screened_chars": verdict["screened_chars"],
+        "session_id": session_id,
+        "home": os.environ.get("HERMES_HOME", ""),
+    }
+    refused_repeat = bool(verdict.get("repeat"))
+    _append(
+        SCREEN_LOG,
+        {**refusal_record, "verdict": "refused-repeat" if refused_repeat else "refused"},
+    )
+    if not refused_repeat:
+        _append(ALERTS_FILE, refusal_record)
+    return _refusal_banner(tool_name, source)
+
+
 def _on_transform_tool_result(
     *,
     tool_name: str = "",
@@ -361,27 +388,7 @@ def _on_transform_tool_result(
             return None  # screening unavailable, pass through untouched
 
         if verdict.get("refused"):
-            # A policy refusal is not a screening failure: the gate saw the content and
-            # declined to transmit it. Record it like a verdict, alert like a hostile
-            # result, and hand the agent a banner that says the usual verdict is absent.
-            refusal_record = {
-                "ts": _now(),
-                "tool": tool_name,
-                "source": source,
-                "sha256": verdict["sha256"],
-                "chars": verdict["chars"],
-                "screened_chars": verdict["screened_chars"],
-                "session_id": session_id,
-                "home": os.environ.get("HERMES_HOME", ""),
-            }
-            refused_repeat = bool(verdict.get("repeat"))
-            _append(
-                SCREEN_LOG,
-                {**refusal_record, "verdict": "refused-repeat" if refused_repeat else "refused"},
-            )
-            if not refused_repeat:
-                _append(ALERTS_FILE, refusal_record)
-            return result + _refusal_banner(tool_name, source)
+            return result + _refused_outcome(verdict, tool_name, source, session_id)
 
         record = {
             "ts": _now(),
