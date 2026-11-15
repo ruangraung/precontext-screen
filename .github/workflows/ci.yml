@@ -53,11 +53,14 @@ jobs:
       # git exited with "ambiguous argument" and the job failed having scanned nothing. It
       # also scanned that range rather than the history this gate is named for. Installing
       # the binary and scanning every commit fixes both, and the version is pinned so a new
-      # release cannot change the result silently.
+      # release cannot change the result silently. The tarball digest is pinned to the
+      # value the release publishes in gitleaks_8.30.1_checksums.txt, so the gate binary
+      # itself is verified before it runs.
       - name: Install gitleaks
         run: |
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin gitleaks
+          curl -sSfL -o /tmp/gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          sudo tar -xz -C /usr/local/bin -f /tmp/gitleaks.tar.gz gitleaks
       - name: Scan every commit
         run: gitleaks git --log-opts=--all --no-banner --redact
 
