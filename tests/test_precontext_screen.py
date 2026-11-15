@@ -151,6 +151,32 @@ def offline_path_checks(mod, check, client) -> None:
             os.environ["JEV_OFFLINE"] = previous
 
 
+def tiny_result_checks(mod, check) -> None:
+    """Section 4: a tiny result reaches the screener.
+
+    The length floor is gone, so a short steering payload cannot bypass screening by
+    being short. Offline, an unrecorded tiny payload still fails open, which is why the
+    return is None either way.
+    """
+    screen_calls = []
+    original_screen = mod._screen
+
+    def spy_screen(text):
+        screen_calls.append(text)
+        return original_screen(text)
+
+    mod._screen = spy_screen
+    out_t = mod._on_transform_tool_result(
+        tool_name="web_extract", args={}, result="ok", duration_ms=1
+    )
+    mod._screen = original_screen
+    check(
+        "tiny result reaches the screener",
+        screen_calls == ["ok"] and out_t is None,
+        f"calls {screen_calls}, returned {out_t!r}",
+    )
+
+
 def refused_checks(mod, client, check) -> None:
     """Section 4b: a refused marker is a screening outcome, not a silent failure.
 
@@ -259,12 +285,8 @@ def flagging_checks(mod, check) -> None:
         f"alerts {alerts_before} -> {line_count(TMP_ALERTS)}",
     )
 
-    # 4. noise is not screened
-    check(
-        "tiny result skipped",
-        mod._on_transform_tool_result(tool_name="web_extract", args={}, result="ok", duration_ms=1)
-        is None,
-    )
+    # 4. a tiny result reaches the screener: the length floor is gone.
+    tiny_result_checks(mod, check)
     check(
         "unscreened tool skipped",
         mod._on_transform_tool_result(
