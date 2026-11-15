@@ -253,10 +253,16 @@ def main() -> int:
             session_id="test-1",
         )
         refused = isinstance(out_r, str)
-        check("refused page gets the refusal banner", refused and '<INJECTION-SCREEN verdict="refused">' in (out_r or ""))
+        check(
+            "refused page gets the refusal banner",
+            refused and '<INJECTION-SCREEN verdict="refused">' in (out_r or ""),
+        )
         if refused:
             check("refused page content preserved under the banner", refused_page in out_r)
-            check("refusal says the usual verdict is missing", "the usual screening verdict is missing" in out_r)
+            check(
+                "refusal says the usual verdict is missing",
+                "the usual screening verdict is missing" in out_r,
+            )
         check(
             "refusal alerted exactly once",
             line_count(TMP_ALERTS) == alerts_before_refused + 1,
@@ -299,8 +305,14 @@ def main() -> int:
         for line in TMP_ALERTS.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    hostile_records = [record for record in records if record.get("source") == "https://evil.example/x"]
-    check("exactly one hostile alert queued", len(hostile_records) == 1, f"{len(records)} records total")
+    hostile_records = [
+        record for record in records if record.get("source") == "https://evil.example/x"
+    ]
+    check(
+        "exactly one hostile alert queued",
+        len(hostile_records) == 1,
+        f"{len(records)} records total",
+    )
     if hostile_records:
         record = hostile_records[0]
         check("alert names the source url", record.get("source") == "https://evil.example/x")
