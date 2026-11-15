@@ -177,25 +177,62 @@ def tiny_result_checks(mod, check) -> None:
     )
 
 
-def main() -> int:
-    TMP_ALERTS.parent.mkdir(parents=True, exist_ok=True)
-    for stale in (TMP_ALERTS, TMP_LOG):
-        stale.unlink(missing_ok=True)
+def refused_checks(mod, client, check) -> None:
+    """Section 4b: a refused marker is a screening outcome, not a silent failure.
 
-    checks: list[tuple[str, bool, str]] = []
+    The gate refuses to transmit the payload, the hook records the refusal, and the
+    agent gets a banner whose verdict says the usual judgement is absent. The marker is
+    installed on the client for this section only, so no real credential shape lives in
+    the tree.
+    """
+    if client is None:
+        print("refusal path: not tested (the client under test did not load)")
+        return
+    original_markers = client.PRIVATE_MARKERS
+    client.PRIVATE_MARKERS = ("PRECONTEXT_TEST_MARKER",)
+    refused_page = BENIGN + "\nThis page embeds PRECONTEXT_TEST_MARKER in a comment.\n"
+    alerts_before_refused = line_count(TMP_ALERTS)
+    out_r = mod._on_transform_tool_result(
+        tool_name="web_extract",
+        args={"url": "https://example.com/keyed"},
+        result=refused_page,
+        duration_ms=5,
+        session_id="test-1",
+    )
+    refused = isinstance(out_r, str)
+    check(
+        "refused page gets the refusal banner",
+        refused and '<INJECTION-SCREEN verdict="refused">' in (out_r or ""),
+    )
+    if refused:
+        check("refused page content preserved under the banner", refused_page in out_r)
+        check(
+            "refusal says the usual verdict is missing",
+            "the usual screening verdict is missing" in out_r,
+        )
+    check(
+        "refusal alerted exactly once",
+        line_count(TMP_ALERTS) == alerts_before_refused + 1,
+        f"alerts {alerts_before_refused} -> {line_count(TMP_ALERTS)}",
+    )
+    out_r2 = mod._on_transform_tool_result(
+        tool_name="browser_exec",
+        args={"code": "open_page()"},
+        result=refused_page,
+        duration_ms=5,
+        session_id="test-1",
+    )
+    check(
+        "refused repeat is bannered but not re-alerted",
+        isinstance(out_r2, str) and line_count(TMP_ALERTS) == alerts_before_refused + 1,
+        f"alerts {alerts_before_refused} -> {line_count(TMP_ALERTS)}",
+    )
+    client.PRIVATE_MARKERS = original_markers
 
-    def check(name: str, ok: bool, detail: str = "") -> None:
-        checks.append((name, bool(ok), detail))
 
-    mod = load()
-
-    client = mod._load_client()
-    state_dir = getattr(mod, "STATE_DIR", None) or getattr(mod, "SHARED_DIR", "?")
-    print(f"plugin under test:   {mod.__file__}")
-    print(f"runtime state in:    {state_dir}")
-    print(f"classifier:          {classifier_label(client)}")
-    print()
-
+def flagging_checks(mod, check) -> None:
+    """Sections 1-4: what passes through, what is flagged, what the cache serves, what is
+    never screened at all."""
     # 1. a benign passage passes through byte-identical
     out = mod._on_transform_tool_result(
         tool_name="web_extract",
@@ -258,7 +295,9 @@ def main() -> int:
         is None,
     )
 
-    # 5. missing client fails open: the whole point of the design
+
+def fail_open_checks(mod, check) -> None:
+    """Section 5: a missing client fails open, the whole point of the design."""
     good_client, good_path = mod._client, mod.CLIENT_FILE
     mod._client, mod._client_failed = None, False
     mod.CLIENT_FILE = Path("/tmp/precontext-screen-test/does-not-exist.py")
@@ -271,6 +310,35 @@ def main() -> int:
     )
     mod._client, mod.CLIENT_FILE, mod._client_failed = good_client, good_path, False
 
+
+def main() -> int:
+    TMP_ALERTS.parent.mkdir(parents=True, exist_ok=True)
+    for stale in (TMP_ALERTS, TMP_LOG):
+        stale.unlink(missing_ok=True)
+
+    checks: list[tuple[str, bool, str]] = []
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        checks.append((name, bool(ok), detail))
+
+    mod = load()
+
+    client = mod._load_client()
+    state_dir = getattr(mod, "STATE_DIR", None) or getattr(mod, "SHARED_DIR", "?")
+    print(f"plugin under test:   {mod.__file__}")
+    print(f"runtime state in:    {state_dir}")
+    print(f"classifier:          {classifier_label(client)}")
+    print()
+
+    # Sections 1-4: pass-through, flagging, cache, and what is never screened.
+    flagging_checks(mod, check)
+
+    # 4b. a page carrying a refused marker is a screening OUTCOME, not a silent failure.
+    refused_checks(mod, client, check)
+
+    # 5. missing client fails open: the whole point of the design.
+    fail_open_checks(mod, check)
+
     # 6. alert record carries what the digest needs, and no page content
     print("--- alert record written to the queue ---")
     print(TMP_ALERTS.read_text(encoding="utf-8").strip())
@@ -281,9 +349,16 @@ def main() -> int:
         for line in TMP_ALERTS.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    check("exactly one alert queued", len(records) == 1, f"{len(records)} records")
-    if records:
-        record = records[0]
+    hostile_records = [
+        record for record in records if record.get("source") == "https://evil.example/x"
+    ]
+    check(
+        "exactly one hostile alert queued",
+        len(hostile_records) == 1,
+        f"{len(records)} records total",
+    )
+    if hostile_records:
+        record = hostile_records[0]
         check("alert names the source url", record.get("source") == "https://evil.example/x")
         check(
             "alert carries the verdict + hash",
