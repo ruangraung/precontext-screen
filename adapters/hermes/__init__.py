@@ -183,17 +183,21 @@ def _slice(text: str) -> str:
 
 
 def _target(args: Any) -> str:
-    """Best-effort source identifier for the alert line (a URL, usually)."""
+    """Best-effort source identifier for the alert line (a URL, usually).
+
+    Whitespace is collapsed at derivation, so the value cannot break a banner
+    frame or forge lines in the delivered digest.
+    """
     if not isinstance(args, dict):
         return ""
     for key in ("url", "urls", "query", "code"):
         value = args.get(key)
         if isinstance(value, str) and value:
-            return value[:300]
+            return " ".join(value.split())[:300]
         if isinstance(value, list) and value:
             first = value[0]
             if isinstance(first, str) and first:
-                return first[:300]
+                return " ".join(first.split())[:300]
     return ""
 
 
