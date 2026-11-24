@@ -85,8 +85,9 @@ if [ "$FAIL_N" -eq 0 ]; then
 fi
 
 if [ -z "$REPO_ROOT" ]; then
-    echo "not a git repository; nothing to scan"
-    exit 0
+    echo "publish-hygiene FAILED (fail closed): not a git repository, so there is nothing"
+    echo "to scan and no pass to report. Run the gate from inside the repository."
+    exit 1
 fi
 
 TRACKED=$(git ls-files)
@@ -103,15 +104,22 @@ fi
 fails=0
 warns=0
 scanned=0
+skipped=0
 while IFS= read -r file; do
     [ -z "$file" ] && continue
     [ -f "$file" ] || continue
-    grep -Iq . "$file" 2>/dev/null || continue   # skip binaries
+    if [ ! -r "$file" ]; then
+        # An unreadable tracked file is an unproven file; counted, and the pass fails on it.
+        skipped=$((skipped + 1))
+        continue
+    fi
     scanned=$((scanned + 1))
 
     while IFS= read -r pat; do
         [ -z "$pat" ] && continue
-        hits=$(grep -InE -i -- "$pat" "$file" 2>/dev/null | head -3)
+        # -a: a canary pasted into a binary-looking file still gets seen, because
+        # skipping binary files quietly is how a full pass gets reported over nothing.
+        hits=$(grep -anE -i -- "$pat" "$file" 2>/dev/null | head -3)
         if [ -n "$hits" ]; then
             if [ $fails -eq 0 ]; then
                 echo "publish-hygiene: findings"
@@ -125,12 +133,19 @@ while IFS= read -r file; do
 
     while IFS= read -r pat; do
         [ -z "$pat" ] && continue
-        if grep -InE -i -q -- "$pat" "$file" 2>/dev/null; then
+        if grep -anE -i -q -- "$pat" "$file" 2>/dev/null; then
             echo "WARN  $file  (pattern: $pat)"
             warns=$((warns + 1))
         fi
     done <<< "$WARN_PATTERNS"
 done <<< "$TRACKED"
+
+if [ "$skipped" -gt 0 ]; then
+    echo
+    echo "publish-hygiene FAILED: $skipped tracked file(s) unreadable, so this pass proves"
+    echo "nothing about them. Fix the permissions or remove the file before publishing."
+    exit 1
+fi
 
 if [ $fails -gt 0 ]; then
     echo

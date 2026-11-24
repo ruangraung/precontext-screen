@@ -79,6 +79,38 @@ else
     report fail "both sources should report separately (exit $CODE, $findings finding(s))"
 fi
 
+# A canary hidden in a binary-looking tracked file is still caught. The NUL byte makes the
+# file read as binary, and a gate that skips it reports a full pass over an unseen canary.
+d=$(sandbox binary 'nothing of interest here')
+{ head -c 1 /dev/zero; printf 'padding %s padding\n' "$CANARY_A"; } > "$d/tracked.bin"
+git -C "$d" add tracked.bin
+run_gate "$d" HYGIENE_PATTERNS_FILE="$WORK/a.pats"
+if [ "$CODE" -eq 1 ] && printf '%s' "$OUT" | grep -q "$CANARY_A"; then
+    report ok "a canary hidden in a binary-looking tracked file is caught"
+else
+    report fail "a binary-hidden canary should be caught (exit $CODE)"
+fi
+
+# A tracked file the gate cannot read fails the pass: an unreadable file is an unproven file.
+d=$(sandbox unreadable 'nothing of interest here')
+chmod 000 "$d/tracked.txt"
+run_gate "$d" HYGIENE_PATTERNS_FILE="$WORK/a.pats"
+if [ "$CODE" -eq 1 ] && printf '%s' "$OUT" | grep -q "unreadable"; then
+    report ok "an unreadable tracked file fails the pass"
+else
+    report fail "an unreadable tracked file should fail the pass (exit $CODE)"
+fi
+chmod 644 "$d/tracked.txt"
+
+# A run outside a git repository refuses instead of reporting success over nothing scanned.
+d=$(mktemp -d "$WORK/nogit.XXXXXX")
+run_gate "$d" HYGIENE_PATTERNS_FILE="$WORK/a.pats"
+if [ "$CODE" -eq 1 ] && printf '%s' "$OUT" | grep -q "not a git repository"; then
+    report ok "a run outside a git repository refuses instead of passing"
+else
+    report fail "a non-repo run should refuse, not pass (exit $CODE)"
+fi
+
 # An emptied rule set fails closed. The builtin block is stripped from a copy to simulate the
 # edit that would remove it, because otherwise the shipped shapes always keep the count above zero.
 STRIPPED="$WORK/no-builtins.sh"
