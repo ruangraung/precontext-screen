@@ -223,6 +223,14 @@ def _guard_refusal(client: Any, payload: str) -> bool:
     return False
 
 
+def _as_score(value: Any) -> float | None:
+    """A classifier answer field as a number, or None when it is not one."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _screen(text: str) -> dict[str, Any] | None:
     """Ask the gate. Returns a verdict dict, or None when screening is unavailable."""
     digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
@@ -283,8 +291,8 @@ def _screen(text: str) -> dict[str, Any] | None:
     verdict = {
         "hostile": float(overrides) >= OVERRIDE_THRESHOLD,
         "overrides": overrides,
-        "addressed_to_ai": (answers.get("addressed_to_ai") or {}).get("noul"),
-        "severity": (answers.get("severity") or {}).get("score"),
+        "addressed_to_ai": _as_score((answers.get("addressed_to_ai") or {}).get("noul")),
+        "severity": _as_score((answers.get("severity") or {}).get("score")),
         "sha256": digest[:16],
         "chars": len(text),
         "screened_chars": len(payload),
