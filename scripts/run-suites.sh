@@ -26,6 +26,8 @@ run "hook suite" python3 tests/test_precontext_screen.py
 
 run "alert-digest suite" python3 tests/test_alert_digest.py
 
+run "client redaction suite" python3 tests/test_jev_redaction.py
+
 run "publish-hygiene gate" bash tests/test_publish_hygiene.sh
 
 if [ "${HOST_E2E:-0}" = "1" ]; then

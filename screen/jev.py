@@ -148,10 +148,13 @@ _SECRET_PATTERNS = (
     ),
     (
         re.compile(
-            r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|pwd)\b(\s*[:=]\s*)\S+"
+            r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|pwd)\b(\s*[\"']?\s*[:=]\s*[\"']?)\S+"
         ),
         r"\1\2<redacted>",
     ),
+    # Bare long hex: many API keys are exactly this shape, and quoting one into a
+    # JSON value must not hide it from the keyword rule above.
+    (re.compile(r"\b[0-9a-fA-F]{32,64}\b"), "<token>"),
     (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}"), "Bearer <redacted>"),
     (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "<email>"),
 )
