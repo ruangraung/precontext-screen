@@ -23,9 +23,9 @@ does with a page; it annotates one thing and logs it.
 - Screens five tool names across three families: `web_search` and `web_extract`, `browser_exec`,
   and `browser_cdp` plus `browser_dialog`. It reads only their text. Every other tool result
   passes through untouched.
-- Judges a long page by its head and its tail, 1,400 characters and 600, since injection
-  attempts sit at the edges of a document and this keeps every call inside the byte cap the
-  task class declares.
+- Judges a page whole when it fits the byte cap the task class declares, 20,000 bytes; a
+  longer page sends byte-sized head and tail within that cap, and a partly judged page is
+  recorded partial in the log, never clean.
 - Leaves the hostile text where it is and appends the banner to it. The agent still sees the
   page, and also sees that the page is not to be trusted.
 - Writes a verdict, a content hash, and the source URL to a log. Never the content itself.
@@ -194,9 +194,9 @@ fetch has misread the design.
 reads. Only string results, and only above a floor (40 characters here, since a shorter result
 cannot carry an attempt worth judging). Everything else passes through.
 
-**What to send.** A slice, head and tail, not the whole body. Head 1,400 and tail 600 is the
-shape the current client declares for this class; the same slice is hashed and cached, so keep
-it stable within a process.
+**What to send.** The whole result while it fits the class byte cap, 20,000 bytes; a longer
+result sends byte-sized head and tail within that cap. The payload is what gets hashed and
+cached, so keep the shape stable within a process.
 
 **The call.** One client, and it is the only thing in the tree that talks to the network. It
 takes a declared task class, the payload, the questions, a timeout (8 seconds from the hook),
@@ -253,8 +253,8 @@ The corpus is in the repository so the number can be re-run and argued with.
 
 - **One egress point.** `screen/jev.py` is the only thing in the tree that talks to
   `api.typesafe.ai`. The plugin loads it by path.
-- **A slice, not a page.** The hook sends head and tail, at most 20,000 bytes for this task
-  class, and the client truncates a long payload instead of refusing it.
+- **A slice only past the cap.** The hook sends the whole result while it fits the class's
+  20,000 bytes, then byte-sized head and tail; the client truncates instead of refusing.
 - **Refused outright.** Private key headers are matched by pattern, and the built-in refuse
   list covers the credential names this deployment uses. A refusal is not a redaction; the call
   does not happen. Your own names and internal markers go in

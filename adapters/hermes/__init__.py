@@ -19,8 +19,8 @@ Design rules, all deliberate:
   * Fails open. Any error, timeout, missing key or unexpected answer returns ``None``,
     which leaves the tool result byte-identical. Screening must never break a fetch.
   * Only three tool families are screened, and only their text.
-  * A long page is judged from its head and tail, not the whole body: injection attempts
-    live at the edges, and this keeps every call inside the ``web_hazard`` byte cap.
+  * A page is judged whole when it fits the ``web_hazard`` byte cap; a longer page sends
+    byte-sized head and tail, and a partly judged page is recorded partial, never clean.
   * Nothing from the content is ever written to disk here. Verdicts and a content hash are
     logged; the content stays where it was fetched.
 """
@@ -82,8 +82,9 @@ SCREENED_TOOLS = frozenset(
     }
 )
 
-HEAD_CHARS = 1400
-TAIL_CHARS = 600
+MAX_SCREEN_BYTES = 20_000
+HEAD_BYTES = 13_950
+TAIL_BYTES = 6_000
 TIMEOUT_S = 8.0
 # The measured separation on this question is a wide gap that no observed page sits
 # inside: 0.02 to 0.03 benign against 0.92 and above hostile, so any cut in between is
@@ -168,10 +169,17 @@ def _append(path: Path, record: dict[str, Any]) -> None:
 
 
 def _slice(text: str) -> str:
-    """Head + tail of the payload: both edges, never the whole body."""
-    if len(text) <= HEAD_CHARS + TAIL_CHARS:
+    """The payload the classifier sees, budgeted to the class byte cap.
+
+    A page that fits the cap is judged whole; a longer page sends byte-sized
+    head and tail chunks, and the hook records whatever remains unjudged.
+    """
+    encoded = text.encode("utf-8", "replace")
+    if len(encoded) <= MAX_SCREEN_BYTES:
         return text
-    return f"{text[:HEAD_CHARS]}\n[...middle omitted by screen...]\n{text[-TAIL_CHARS:]}"
+    head = encoded[:HEAD_BYTES].decode("utf-8", "ignore")
+    tail = encoded[-TAIL_BYTES:].decode("utf-8", "ignore")
+    return f"{head}\n[...middle omitted by screen...]\n{tail}"
 
 
 def _target(args: Any) -> str:
@@ -405,7 +413,10 @@ def _on_transform_tool_result(
         }
 
         if not verdict["hostile"]:
-            _append(SCREEN_LOG, {**record, "verdict": "clean"})
+            # A partly judged page is never recorded clean: the verdict covers only
+            # the characters the classifier saw.
+            covered = verdict["screened_chars"] >= verdict["chars"]
+            _append(SCREEN_LOG, {**record, "verdict": "clean" if covered else "partial"})
             return None
 
         # One alert per distinct content per process. The same page fetched twice, a retry,
