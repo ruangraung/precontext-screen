@@ -74,19 +74,25 @@ def _write_cursor(delivered: int) -> None:
 
 def _load() -> list[dict]:
     try:
-        lines = ALERTS.read_text(encoding="utf-8").splitlines()
+        raw = ALERTS.read_text(encoding="utf-8")
     except FileNotFoundError:
         return []
     except Exception:
         return []
     out: list[dict] = []
-    for line in lines:
+    # json.dumps with ensure_ascii=False leaves Unicode line separators raw
+    # inside values, so lines are framed on the newline the writer appends.
+    for line in raw.split("\n"):
         line = line.strip()
         if not line:
             continue
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
+            print(
+                f"alert-digest: skipping a malformed alert line ({len(line)} chars)",
+                file=sys.stderr,
+            )
             continue
         if isinstance(record, dict):
             out.append(record)
