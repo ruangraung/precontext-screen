@@ -250,6 +250,20 @@ def _as_score(value: Any) -> float | None:
         return None
 
 
+def _record_unscreened(verdict: str, digest: str, chars: int, screened: int) -> None:
+    """A pass that was never judged, recorded so the silence is visible."""
+    _append(
+        SCREEN_LOG,
+        {
+            "ts": _now(),
+            "sha256": digest,
+            "chars": chars,
+            "screened_chars": screened,
+            "verdict": verdict,
+        },
+    )
+
+
 def _screen(text: str) -> dict[str, Any] | None:
     """Ask the gate. Returns a verdict dict, or None when screening is unavailable."""
     digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
@@ -262,6 +276,8 @@ def _screen(text: str) -> dict[str, Any] | None:
 
     client = _load_client()
     if client is None:
+        # No key means no judgement; the pass stays open, but the record says so.
+        _record_unscreened("unavailable", digest[:16], len(text), 0)
         return None
     payload = _slice(text)
     started = time.monotonic()
@@ -287,6 +303,7 @@ def _screen(text: str) -> dict[str, Any] | None:
         )
     except Exception as exc:
         logger.debug("precontext-screen: ask failed: %s", exc)
+        _record_unscreened("unavailable", digest[:16], len(text), len(payload))
         return None
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
@@ -307,9 +324,15 @@ def _screen(text: str) -> dict[str, Any] | None:
         )
         return None
 
+    score = _as_score(overrides)
+    if score is None:
+        # A wrong-typed answer is a degraded judgement, not a clean one.
+        _record_unscreened("bad-answer", digest[:16], len(text), len(payload))
+        return None
+
     verdict = {
-        "hostile": float(overrides) >= OVERRIDE_THRESHOLD,
-        "overrides": overrides,
+        "hostile": score >= OVERRIDE_THRESHOLD,
+        "overrides": score,
         "addressed_to_ai": _as_score((answers.get("addressed_to_ai") or {}).get("noul")),
         "severity": _as_score((answers.get("severity") or {}).get("score")),
         "sha256": digest[:16],

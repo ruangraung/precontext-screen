@@ -611,6 +611,76 @@ def credential_source_checks(mod, check) -> None:
         mod._cache.clear()
 
 
+class RaisingGate(FakeGate):
+    """A classifier that cannot be reached: the ask call itself fails."""
+
+    def ask(self, **kwargs):
+        raise RuntimeError("classifier unreachable")
+
+
+def degraded_path_checks(mod, check) -> None:
+    """Section 4i: a screening pass that never judged is recorded, never silent."""
+    saved_client, saved_failed = mod._client, mod._client_failed
+    saved_path = mod.CLIENT_FILE
+
+    malformed_gate = FakeGate(0.95, {"overrides_or_conceals": {"noul": "totally-not-a-number"}})
+    mod._client, mod._client_failed = malformed_gate, False
+    with mod._cache_lock:
+        mod._cache.clear()
+    out_bad = mod._on_transform_tool_result(
+        tool_name="web_extract",
+        args={"url": "https://evil.example/bad-answer"},
+        result=HOSTILE,
+        duration_ms=5,
+        session_id="test-1",
+    )
+    newest = json.loads(TMP_LOG.read_text(encoding="utf-8").splitlines()[-1])
+    check(
+        "a malformed answer passes open and is recorded as a bad answer",
+        out_bad is None and newest.get("verdict") == "bad-answer",
+        f"out {type(out_bad).__name__}, verdict {newest.get('verdict')!r}",
+    )
+
+    mod._client, mod._client_failed = None, False
+    mod.CLIENT_FILE = Path("/tmp/precontext-screen-test/does-not-exist.py")
+    with mod._cache_lock:
+        mod._cache.clear()
+    out_keyless = mod._on_transform_tool_result(
+        tool_name="web_extract",
+        args={"url": "https://evil.example/keyless"},
+        result=HOSTILE + " (keyless variant)",
+        duration_ms=5,
+        session_id="test-1",
+    )
+    newest = json.loads(TMP_LOG.read_text(encoding="utf-8").splitlines()[-1])
+    check(
+        "a keyless pass is recorded as unavailable",
+        out_keyless is None and newest.get("verdict") == "unavailable",
+        f"out {type(out_keyless).__name__}, verdict {newest.get('verdict')!r}",
+    )
+
+    mod._client, mod._client_failed = RaisingGate(0.95), False
+    with mod._cache_lock:
+        mod._cache.clear()
+    out_raised = mod._on_transform_tool_result(
+        tool_name="web_extract",
+        args={"url": "https://evil.example/unreachable"},
+        result=HOSTILE + " (unreachable variant)",
+        duration_ms=5,
+        session_id="test-1",
+    )
+    newest = json.loads(TMP_LOG.read_text(encoding="utf-8").splitlines()[-1])
+    check(
+        "an unreachable classifier is recorded as unavailable",
+        out_raised is None and newest.get("verdict") == "unavailable",
+        f"out {type(out_raised).__name__}, verdict {newest.get('verdict')!r}",
+    )
+
+    mod._client, mod._client_failed, mod.CLIENT_FILE = saved_client, saved_failed, saved_path
+    with mod._cache_lock:
+        mod._cache.clear()
+
+
 def main() -> int:
     TMP_ALERTS.parent.mkdir(parents=True, exist_ok=True)
     for stale in (TMP_ALERTS, TMP_LOG):
@@ -687,6 +757,10 @@ def main() -> int:
     # 6e. a URL source carries no credentials into the alert queue (see
     # credential_source_checks)
     credential_source_checks(mod, check)
+
+    # 6f. a screening pass that never judged is recorded, never silent (see
+    # degraded_path_checks)
+    degraded_path_checks(mod, check)
 
     # 7. the offline path answers recorded content, and only recorded content (see
     # offline_path_checks)
