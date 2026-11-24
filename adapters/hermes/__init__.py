@@ -37,6 +37,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -182,22 +183,40 @@ def _slice(text: str) -> str:
     return f"{head}\n[...middle omitted by screen...]\n{tail}"
 
 
+def _safe_source(value: str) -> str:
+    """A URL-shaped source without the parts credentials ride in: userinfo,
+    query and fragment are dropped, the authority keeps host and port."""
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return value
+    if not parts.scheme or not parts.hostname:
+        return value
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    netloc = parts.hostname if port is None else f"{parts.hostname}:{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+
+
 def _target(args: Any) -> str:
     """Best-effort source identifier for the alert line (a URL, usually).
 
     Whitespace is collapsed at derivation, so the value cannot break a banner
-    frame or forge lines in the delivered digest.
+    frame or forge lines in the delivered digest, and a URL-shaped value is
+    reduced to scheme, host and path, so credentials never reach the queue.
     """
     if not isinstance(args, dict):
         return ""
     for key in ("url", "urls", "query", "code"):
         value = args.get(key)
         if isinstance(value, str) and value:
-            return " ".join(value.split())[:300]
+            return _safe_source(" ".join(value.split()))[:300]
         if isinstance(value, list) and value:
             first = value[0]
             if isinstance(first, str) and first:
-                return " ".join(first.split())[:300]
+                return _safe_source(" ".join(first.split()))[:300]
     return ""
 
 

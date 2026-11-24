@@ -557,6 +557,60 @@ def answer_shape_checks(mod, check) -> None:
         mod._cache.clear()
 
 
+def credential_source_checks(mod, check) -> None:
+    """Section 4h: a URL source carries no credentials into the alert queue."""
+    gate = FakeGate(0.95)
+    saved_client, saved_failed = mod._client, mod._client_failed
+    mod._client, mod._client_failed = gate, False
+    with mod._cache_lock:
+        mod._cache.clear()
+    out = mod._on_transform_tool_result(
+        tool_name="web_extract",
+        args={"url": "https://user:secret@evil.example/path?token=abc123&sig=zz"},
+        result=HOSTILE,
+        duration_ms=5,
+        session_id="test-1",
+    )
+    banner = out or ""
+    check(
+        "the banner shows a bare scheme, host and path",
+        "source=https://evil.example/path" in banner and "secret" not in banner,
+        "credential shape survived into the banner",
+    )
+    alerts = [
+        json.loads(line)
+        for line in TMP_ALERTS.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    record_source = alerts[-1].get("source", "") if alerts else ""
+    check(
+        "the alert record stores the bare URL",
+        record_source == "https://evil.example/path",
+        f"source {record_source!r}",
+    )
+    out_plain = mod._on_transform_tool_result(
+        tool_name="web_extract",
+        args={"url": "https://example.com/guide"},
+        result=HOSTILE + " (plain variant)",
+        duration_ms=5,
+        session_id="test-1",
+    )
+    plain_alerts = [
+        json.loads(line)
+        for line in TMP_ALERTS.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    plain_source = plain_alerts[-1].get("source", "") if plain_alerts else ""
+    check(
+        "an ordinary URL keeps its full shape",
+        isinstance(out_plain, str) and plain_source == "https://example.com/guide",
+        f"source {plain_source!r}",
+    )
+    mod._client, mod._client_failed = saved_client, saved_failed
+    with mod._cache_lock:
+        mod._cache.clear()
+
+
 def main() -> int:
     TMP_ALERTS.parent.mkdir(parents=True, exist_ok=True)
     for stale in (TMP_ALERTS, TMP_LOG):
@@ -629,6 +683,10 @@ def main() -> int:
 
     # 6d. a crafted answer field cannot speak inside the banner (see answer_shape_checks)
     answer_shape_checks(mod, check)
+
+    # 6e. a URL source carries no credentials into the alert queue (see
+    # credential_source_checks)
+    credential_source_checks(mod, check)
 
     # 7. the offline path answers recorded content, and only recorded content (see
     # offline_path_checks)
