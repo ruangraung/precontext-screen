@@ -24,6 +24,8 @@ run() {
 
 run "hook suite" python3 tests/test_precontext_screen.py
 
+run "screen coverage suite" python3 tests/test_screen_coverage.py
+
 run "alert-digest suite" python3 tests/test_alert_digest.py
 
 run "client redaction suite" python3 tests/test_jev_redaction.py

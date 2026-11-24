@@ -250,6 +250,54 @@ def _as_score(value: Any) -> float | None:
         return None
 
 
+def _record_unscreened(verdict: str, digest: str, chars: int, screened: int) -> None:
+    """A pass that was never judged, recorded so the silence is visible."""
+    _append(
+        SCREEN_LOG,
+        {
+            "ts": _now(),
+            "sha256": digest,
+            "chars": chars,
+            "screened_chars": screened,
+            "verdict": verdict,
+        },
+    )
+
+
+def _verdict_from_answers(report: dict, base: dict[str, Any]) -> dict[str, Any] | None:
+    """The verdict for a scored answer, or None with the pass recorded as
+    no-answer or bad-answer: a degraded answer never looks judged."""
+    answers = report.get("answers") or {}
+    overrides = (answers.get("overrides_or_conceals") or {}).get("noul")
+    if overrides is None:
+        _append(
+            SCREEN_LOG,
+            {
+                **base,
+                "ts": _now(),
+                "http_status": report.get("http_status"),
+                "verdict": "no-answer",
+            },
+        )
+        return None
+    score = _as_score(overrides)
+    if score is None:
+        # A wrong-typed answer is a degraded judgement, not a clean one.
+        _append(SCREEN_LOG, {**base, "ts": _now(), "verdict": "bad-answer"})
+        return None
+    return {
+        **base,
+        "hostile": score >= OVERRIDE_THRESHOLD,
+        "overrides": score,
+        "addressed_to_ai": _as_score((answers.get("addressed_to_ai") or {}).get("noul")),
+        "severity": _as_score((answers.get("severity") or {}).get("score")),
+        "model": report.get("model") or "",
+        "http_status": report.get("http_status"),
+        "dry_run": report.get("dry_run"),
+        "redactions": report.get("redactions") or {},
+    }
+
+
 def _screen(text: str) -> dict[str, Any] | None:
     """Ask the gate. Returns a verdict dict, or None when screening is unavailable."""
     digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
@@ -262,6 +310,8 @@ def _screen(text: str) -> dict[str, Any] | None:
 
     client = _load_client()
     if client is None:
+        # No key means no judgement; the pass stays open, but the record says so.
+        _record_unscreened("unavailable", digest[:16], len(text), 0)
         return None
     payload = _slice(text)
     started = time.monotonic()
@@ -287,41 +337,19 @@ def _screen(text: str) -> dict[str, Any] | None:
         )
     except Exception as exc:
         logger.debug("precontext-screen: ask failed: %s", exc)
+        _record_unscreened("unavailable", digest[:16], len(text), len(payload))
         return None
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
-    answers = report.get("answers") or {}
-    overrides = (answers.get("overrides_or_conceals") or {}).get("noul")
-    if overrides is None:
-        _append(
-            SCREEN_LOG,
-            {
-                "ts": _now(),
-                "sha256": digest[:16],
-                "chars": len(text),
-                "screened_chars": len(payload),
-                "http_status": report.get("http_status"),
-                "verdict": "no-answer",
-                "latency_ms": elapsed_ms,
-            },
-        )
-        return None
-
-    verdict = {
-        "hostile": float(overrides) >= OVERRIDE_THRESHOLD,
-        "overrides": overrides,
-        "addressed_to_ai": _as_score((answers.get("addressed_to_ai") or {}).get("noul")),
-        "severity": _as_score((answers.get("severity") or {}).get("score")),
+    base = {
         "sha256": digest[:16],
         "chars": len(text),
         "screened_chars": len(payload),
         "latency_ms": elapsed_ms,
-        "model": report.get("model") or "",
-        "http_status": report.get("http_status"),
-        "dry_run": report.get("dry_run"),
-        "redactions": report.get("redactions") or {},
     }
-    _cache_put(digest, verdict)
+    verdict = _verdict_from_answers(report, base)
+    if verdict is not None:
+        _cache_put(digest, verdict)
     return verdict
 
 
