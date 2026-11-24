@@ -17,6 +17,10 @@
 # Deliberately absent: a supply-chain scanner. This repository has no third-party
 # runtime dependencies, so such a job would have nothing to scan while still
 # showing a green check. Revisit the moment a dependency appears.
+#
+# Action refs are pinned to the commit SHA of the version named beside each use, so
+# a retargeted tag cannot change what runs here. Bump a pin deliberately, the way
+# the gitleaks digest below is bumped.
 
 name: CI
 
@@ -37,7 +41,7 @@ jobs:
     name: Publish hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
       - name: No internal identity or infrastructure in tracked files
         run: bash scripts/publish-hygiene.sh
 
@@ -45,7 +49,7 @@ jobs:
     name: Gitleaks secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
         with:
           fetch-depth: 0
       # The gitleaks action derives a scan range from the push. On the first push of a
@@ -68,12 +72,12 @@ jobs:
     name: Tests + lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Install lint tooling
-        run: pip install ruff
+        run: pip install ruff==0.16.10
       - name: ruff check
         run: ruff check .
       - name: ruff format check
@@ -98,8 +102,8 @@ jobs:
       security-events: write
       actions: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      - uses: github/codeql-action/init@439137e1b50c27ba9e2f9befc93e43091b449c34 # v3.32.0
         with:
           languages: python
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@439137e1b50c27ba9e2f9befc93e43091b449c34 # v3.32.0
