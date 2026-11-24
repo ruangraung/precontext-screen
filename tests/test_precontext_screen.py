@@ -328,8 +328,8 @@ class FakeGate:
     def guard(self, task_class: str, payload: str) -> None:
         return None
 
-    def ask(self, *, task_class, state, questions, dry_run, timeout):
-        self.payloads.append(state)
+    def ask(self, **kwargs):
+        self.payloads.append(kwargs["state"])
         return {
             "answers": {
                 "overrides_or_conceals": {"noul": self.score},
