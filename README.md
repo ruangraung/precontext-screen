@@ -166,7 +166,7 @@ hostile ones, so any cut inside that gap is an equally defensible one.
 **Refusal.** A page that carries a credential-shaped literal never reaches the classifier: the
 egress gate refuses the payload itself. The hook records this as a `refused` verdict, queues
 an alert, and banners the content as unverified. A refusal is a screening outcome, not a
-screening failure — the gate read the content and declined to transmit it.
+screening failure: the gate read the content and declined to transmit it.
 
 The three questions are asked as written. Combining them into one compound question is what
 produced the only false positive this question set ever had, and the comment in the adapter
@@ -191,8 +191,8 @@ sits in the path of every fetch. A second adapter that turns a classifier outage
 fetch has misread the design.
 
 **What to screen.** Tools whose result is third-party text: search, page fetches, browser
-reads. Only string results, and only above a floor (40 characters here, since a shorter result
-cannot carry an attempt worth judging). Everything else passes through.
+reads. Every non-empty string result is screened, however short, since a short payload is
+enough to carry an attempt worth judging. Everything else passes through.
 
 **What to send.** The whole result while it fits the class byte cap, 20,000 bytes; a longer
 result sends byte-sized head and tail within that cap. The payload is what gets hashed and
@@ -313,7 +313,7 @@ python3 tools/alert-digest.py --status   # totals and cursor position
 | Path | Status |
 |---|---|
 | Hermes Agent on Linux, Python 3.11 | **Verified.** The hook suite, the end-to-end proof through production plugin discovery, the probe harness, and the publish gates |
-| Install by symlinking the adapter and enabling it in the config | **Verified.** Plugin discovery loads it, the clone's client is found, runtime state lands in the clone, and the suite passes 17/17 against that install |
+| Install by symlinking the adapter and enabling it in the config | **Verified.** Plugin discovery loads it, the clone's client is found, runtime state lands in the clone, and the suite passes against that install |
 | Install by copying the adapter into the plugins directory | **Verified on a machine that already has a client at `~/.hermes/scripts/jev/`.** On a machine without one, screening is unavailable and the plugin logs that and passes results through. Set `JEV_STATE_DIR` to the clone's `screen/` to avoid it |
 | macOS, Windows | **Not checked.** Nothing here is platform-specific, but nothing has been run there either |
 | Any host other than Hermes | **Not implemented.** The contract above is an invitation, not a claim |
@@ -349,20 +349,27 @@ cp scripts/hygiene-patterns.example.txt scripts/hygiene-patterns.local.txt
 
 ## Testing
 
-Two suites, both plain scripts, not pytest, each printing `N/N checks passed` and
-exiting non-zero on failure.
+The suites are plain scripts, not pytest, each printing `N/N checks passed` and
+exiting non-zero on failure: the hook suite, the coverage suite, the alert-digest suite,
+the egress-redaction suite, and the publish-hygiene gate's bash suite.
 
 ```bash
-JEV_OFFLINE=1 python3 tests/test_precontext_screen.py   # 17 checks, stdlib only, no network
-bash scripts/run-suites.sh                              # both suites, as CI runs them
+JEV_OFFLINE=1 python3 tests/test_precontext_screen.py   # stdlib only, no network
+bash scripts/run-suites.sh                              # every suite, as CI runs them
 ```
 
 The hook suite registers checks against the same function a live session calls: a benign
 passage passes through byte-identical, an injection is flagged and gains the banner, repeated
-content is served from cache without a second alert, short results and other tools are not
-screened, a missing client fails open, the queued alert carries a verdict and no page content,
-the offline path answers recorded content and refuses anything else, and the banner names the
-plugin exactly as its manifest does.
+content is served from cache without a second alert, a tiny result reaches the screener while
+unscreened tools are skipped, a missing client fails open, the queued alert carries a verdict
+and no page content, the offline path answers recorded content and refuses anything else, and
+the banner names the plugin exactly as its manifest does.
+
+The coverage suite holds the judgement contract's edges with a stand-in classifier: a page
+that fits the class byte cap is judged whole, an over-cap page fills the cap, steering placed
+mid-page is flagged, a partly judged page is logged partial, a stored source cannot break a
+trusted frame or carry credentials, a crafted answer field cannot speak inside the banner, and
+a pass that never judged is recorded, never silent.
 
 ### The client's own checks
 
@@ -383,7 +390,7 @@ HOST_E2E=1 bash scripts/run-suites.sh
 
 It imports the host agent's own modules, fetches a genuinely hostile public page and an ordinary
 documentation page, and asserts that the first is flagged and the second is untouched. It needs
-the interpreter the agent uses, so it does not run in CI. Both suites redirect their alert and
+the interpreter the agent uses, so it does not run in CI. The suites redirect their alert and
 screen-log paths to a scratch directory before the first call, and the end-to-end proof refuses
 to start if it cannot find the discovered plugin module to redirect, because a test alert in a
 live queue reads as a real injection.
