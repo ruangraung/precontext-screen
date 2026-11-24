@@ -37,7 +37,7 @@ GOOD = {
     "session_id": "test-1",
     "home": "",
 }
-SEPARATOR_SOURCE = "https://evil.example/separators" + chr(0x2028) + "page"
+SEPARATORS = "https://evil.example/separators" + chr(0x2028) + "page"
 
 
 def load():
@@ -57,42 +57,37 @@ def write_alerts(records) -> None:
     )
 
 
-def main() -> int:
-    TMP_DIR.mkdir(parents=True, exist_ok=True)
-    for stale in (TMP_ALERTS, TMP_CURSOR):
-        stale.unlink(missing_ok=True)
-
-    checks: list[tuple[str, bool, str]] = []
-
-    def check(name: str, ok: bool, detail: str = "") -> None:
-        checks.append((name, bool(ok), detail))
-
-    mod = load()
-
-    # 1. a record whose source carries a Unicode line separator still delivers
-    write_alerts([GOOD, {**GOOD, "source": SEPARATOR_SOURCE, "sha256": "cafebabecafebabe"}])
-    records = mod._load()
-    by_hash = {record.get("sha256"): record for record in records}
-    separator_survives = "cafebabecafebabe" in by_hash
-    check(
-        "a record carrying a line separator is not dropped",
-        separator_survives and len(records) == 2,
-        f"{len(records)} of 2 records loaded",
-    )
+def run_digest(mod, argv: list[str]) -> tuple[int, str]:
+    """Run the digest with stdout captured, so checks read what cron would deliver."""
     delivered = io.StringIO()
     saved_stdout = sys.stdout
     sys.stdout = delivered
     try:
-        exit_all = mod.main(["--all"])
+        code = mod.main(argv)
     finally:
         sys.stdout = saved_stdout
+    return code, delivered.getvalue()
+
+
+def separator_record_checks(mod, check) -> None:
+    """A record carrying a Unicode line separator delivers like any other."""
+    write_alerts([GOOD, {**GOOD, "source": SEPARATORS, "sha256": "cafebabecafebabe"}])
+    records = mod._load()
+    check(
+        "a record carrying a line separator is not dropped",
+        len(records) == 2 and any(r.get("sha256") == "cafebabecafebabe" for r in records),
+        f"{len(records)} of 2 records loaded",
+    )
+    code, delivered = run_digest(mod, ["--all"])
     check(
         "the digest prints the separator record like any other",
-        exit_all == 0 and "cafebabecafebabe"[:8] in delivered.getvalue(),
-        f"exit {exit_all}",
+        code == 0 and "cafebabecafe" in delivered,
+        f"exit {code}",
     )
 
-    # 2. a line that still fails to parse is reported, not silently dropped
+
+def malformed_line_checks(mod, check) -> None:
+    """A line that fails to parse is reported and does not block the rest."""
     TMP_ALERTS.write_text(
         json.dumps(GOOD, ensure_ascii=False) + "\n{not a json line\n",
         encoding="utf-8",
@@ -106,26 +101,35 @@ def main() -> int:
         f"{len(parsed)} parsed, stderr: {captured.getvalue().strip()[:40]!r}",
     )
 
-    # 3. the cursor keeps a second run silent
+
+def cursor_silence_checks(mod, check) -> None:
+    """Delivered alerts do not repeat on the next run."""
     write_alerts([GOOD])
     TMP_CURSOR.unlink(missing_ok=True)
-    first = io.StringIO()
-    sys.stdout = first
-    try:
-        mod.main([])
-    finally:
-        sys.stdout = saved_stdout
-    second = io.StringIO()
-    sys.stdout = second
-    try:
-        silent = mod.main([])
-    finally:
-        sys.stdout = saved_stdout
+    code_first, delivered_first = run_digest(mod, [])
+    code_second, delivered_second = run_digest(mod, [])
+    silent = code_first == 0 and delivered_first and not delivered_second
     check(
         "delivered alerts do not repeat on the next run",
-        silent == 0 and first.getvalue() and not second.getvalue(),
-        f"first {len(first.getvalue())} chars, second {len(second.getvalue())} chars",
+        silent and code_second == 0,
+        f"first {len(delivered_first)} chars, second {len(delivered_second)} chars",
     )
+
+
+def main() -> int:
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    for stale in (TMP_ALERTS, TMP_CURSOR):
+        stale.unlink(missing_ok=True)
+
+    checks: list[tuple[str, bool, str]] = []
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        checks.append((name, bool(ok), detail))
+
+    mod = load()
+    separator_record_checks(mod, check)
+    malformed_line_checks(mod, check)
+    cursor_silence_checks(mod, check)
 
     failed = [c for c in checks if not c[1]]
     for name, ok, detail in checks:
